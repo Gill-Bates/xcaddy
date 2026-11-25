@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import tempfile
 from collections import Counter
 from pathlib import Path
@@ -111,6 +112,8 @@ def fetch_published(url: str, arch: str, dest: Path, fingerprint: str) -> Path:
     names = [n for n in manifest.get("packages", {}) if n.endswith(f"_{arch}.deb")]
     if len(names) != 1:
         raise ScriptError(f"manifest lists {len(names)} packages for {arch}")
+    if not re.fullmatch(r"[A-Za-z0-9._+~-]+\.deb", names[0]):
+        raise ScriptError(f"unsafe package name in the release manifest: {names[0]!r}")
     deb = dest / names[0]
     publish._download(f"{url.rstrip('/')}/pool/main/c/caddy-custom/{names[0]}", deb)
     if sha256_file(deb) != manifest["packages"][names[0]]:

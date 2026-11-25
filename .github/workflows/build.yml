@@ -369,6 +369,7 @@ jobs:
           fi
           python3 scripts/publish.py export-site --repo-dir repo-state --out site
           python3 scripts/publish.py verify-site site --fingerprint "$fpr"
+          python3 scripts/publish.py cleanup
       - id: release
         run: python3 scripts/publish.py release-id --repo-dir repo-state
       - uses: ./.github/actions/persist-state
@@ -399,13 +400,17 @@ jobs:
       - uses: ./.github/actions/restore-state
         with:
           token: ${{ github.token }}
-      - name: Re-stage the staged snapshot (signer pinned, package bytes checked against the manifest)
+      - name: Re-stage the staged snapshot (signer pinned, version bound to the decision)
         env:
           KEY_ID: ${{ vars.APT_GPG_KEY_ID }}
+          EXPECTED: ${{ needs.check-version.outputs.package_version }}
         run: |
-          python3 scripts/publish.py verify-state repo-state --fingerprint "$KEY_ID"
+          [ -n "$EXPECTED" ] || { echo "ERROR: no expected package version" >&2; exit 1; }
+          python3 scripts/publish.py verify-state repo-state --fingerprint "$KEY_ID" --expect-package-version "$EXPECTED"
           python3 scripts/publish.py export-site --repo-dir repo-state --out site
-          python3 scripts/publish.py verify-site site --fingerprint "$KEY_ID"
+          python3 scripts/publish.py release-id --repo-dir repo-state | tee release.txt
+          release_id=$(sed -n 's/^release_id=//p' release.txt | tail -n 1)
+          python3 scripts/publish.py verify-site site --fingerprint "$KEY_ID" --expect-release-id "$release_id"
       - id: release
         run: python3 scripts/publish.py release-id --repo-dir repo-state
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
@@ -446,7 +451,9 @@ jobs:
         env:
           KEY_ID: ${{ vars.APT_GPG_KEY_ID }}
           RELEASE_ID: ${{ needs.sign-and-publish.outputs.release_id || needs.recover-stage.outputs.release_id }}
-        run: python3 scripts/publish.py verify-url "$PUBLIC_URL" --fingerprint "$KEY_ID" --expect-release-id "$RELEASE_ID"
+        run: |
+          [ -n "$RELEASE_ID" ] || { echo "ERROR: no release id from the publishing job" >&2; exit 1; }
+          python3 scripts/publish.py verify-url "$PUBLIC_URL" --fingerprint "$KEY_ID" --expect-release-id "$RELEASE_ID"
       - name: apt update against the public URL
         env:
           PKG_VERSION: ${{ needs.check-version.outputs.package_version }}
@@ -459,10 +466,10 @@ jobs:
                 -o "Dir::State::lists=$d/lists" -o "Dir::Cache=$d/cache" -o APT::Sandbox::User=root)
           sudo apt-get "${opts[@]}" update
           apt-cache "${opts[@]}" policy caddy-custom | tee policy.txt
-          grep -F "Candidate: ${PKG_VERSION}" policy.txt
+          grep -Fx "  Candidate: ${PKG_VERSION}" policy.txt
 
   confirm-published:
-    needs: [check-version, verify-publication]
+    needs: [check-version, sign-and-publish, recover-stage, verify-publication]
     if: ${{ !cancelled() && needs.verify-publication.result == 'success' }}
     runs-on: ubuntu-26.04
     timeout-minutes: 10
@@ -487,12 +494,16 @@ jobs:
       - name: Record VERIFIED and PUBLISHED (the manifest itself is not re-signed)
         env:
           APT_GPG_PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
+          RELEASE_ID: ${{ needs.sign-and-publish.outputs.release_id || needs.recover-stage.outputs.release_id }}
         run: |
+          [ -n "$RELEASE_ID" ] || { echo "ERROR: no release id from the publishing job" >&2; exit 1; }
           fpr=$(sed -n 's/^fingerprint=//p' fingerprint.txt | tail -n 1)
+          python3 scripts/publish.py verify-state repo-state --fingerprint "$fpr" --expect-release-id "$RELEASE_ID"
           python3 scripts/publish.py set-status --repo-dir repo-state --fingerprint "$fpr" --status VERIFIED
           python3 scripts/publish.py set-status --repo-dir repo-state --fingerprint "$fpr" --status PUBLISHED
           python3 scripts/publish.py export-site --repo-dir repo-state --out site
-          python3 scripts/publish.py verify-site site --fingerprint "$fpr"
+          python3 scripts/publish.py verify-site site --fingerprint "$fpr" --expect-release-id "$RELEASE_ID"
+          python3 scripts/publish.py cleanup
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           name: pages-confirm
@@ -567,7 +578,7 @@ jobs:
           VERIFY_STATUS: ${{ needs.verify-status.result }}
         run: |
           if [[ " $RESULTS " == *" failure "* || " $RESULTS " == *" cancelled "* ]]; then
-            echo "### Failed: the previously published state is unchanged; the next run recovers" >> "$GITHUB_STEP_SUMMARY"
+            echo "### Failed: the public state may already be DEPLOYED but is not confirmed as PUBLISHED; the next run recovers" >> "$GITHUB_STEP_SUMMARY"
             exit 1
           elif [[ "$SHOULD_BUILD" == "false" && "$RECOVER" != "true" ]]; then
             echo "### No new version: nothing to build" >> "$GITHUB_STEP_SUMMARY"

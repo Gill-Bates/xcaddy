@@ -634,3 +634,165 @@ def test_the_trigger_check_detects_a_run_that_can_start_elsewhere(mutation):
         and "tags" not in triggers["push"]
     )
     assert not safe
+
+
+def test_verify_state_binds_the_state_to_the_expected_release(env):
+    repo, fpr, debs, tmp = env
+    publish_version(repo, fpr, debs, "2.11.9+custom.1", 1)
+    manifest = publish.verify_state(repo, fpr)
+    publish.verify_state(repo, fpr, manifest["release_id"], manifest["package_version"])
+    with pytest.raises(ScriptError, match="expected"):
+        publish.verify_state(repo, fpr, release_id="0" * 16)
+    with pytest.raises(ScriptError, match="expected 2.11.10"):
+        publish.verify_state(repo, fpr, package_version="2.11.10+custom.1")
+
+
+def test_a_state_rolled_back_to_an_older_signed_release_is_refused(env):
+    repo, fpr, debs, tmp = env
+    publish_version(repo, fpr, debs, "2.11.9+custom.1", 1)
+    older = tmp / "older"
+    shutil.copytree(repo, older, ignore=shutil.ignore_patterns("db", "pool", "dists"))
+    publish_version(repo, fpr, debs, "2.11.10+custom.1", 1)
+    # the apt-repo branch was reset: it validly signs 2.11.9 while 2.11.10 is expected
+    with pytest.raises(ScriptError, match="expected 2.11.10"):
+        publish.verify_state(older, fpr, package_version="2.11.10+custom.1")
+
+
+def test_a_status_of_another_release_is_refused(env):
+    repo, fpr, debs, tmp = env
+    publish_version(repo, fpr, debs, "2.11.9+custom.1", 1)
+    status = repo / "release-status.json"
+    status.write_text(json.dumps({"release_id": "0" * 16, "status": "PUBLISHED"}))
+    publish._detached(status, repo / "release-status.json.asc", fpr)
+    with pytest.raises(ScriptError, match="different release"):
+        publish.verify_state(repo, fpr)
+
+
+def test_finalize_refuses_a_package_of_another_version(env):
+    repo, fpr, debs, _ = env
+    built = debs("2.11.9+custom.0")
+    publish.add_packages(repo, built)
+    with pytest.raises(ScriptError, match="not version 2.11.9\\+custom.1"):
+        publish.finalize(repo, fpr, "2.11.9", 1, "hash", built)
+    assert not (repo / "release-manifest.json").exists()
+
+
+def test_verify_url_requires_the_expected_release_id(served):
+    _, _, fpr, _ = served
+    with pytest.raises(ScriptError, match="release id is required"):
+        publish.verify_url("https://example.invalid", fingerprint=fpr, release_id="")
+
+
+@pytest.mark.parametrize("marker", ["EXPKEYSIG", "REVKEYSIG", "EXPSIG", "BADSIG", "ERRSIG"])
+def test_expired_revoked_or_bad_signatures_are_refused(marker):
+    fpr = "A" * 40
+    good = f"[GNUPG:] GOODSIG 1234 x\n[GNUPG:] VALIDSIG {fpr} 2026-01-01 1 0 4 0 22 8 00 {fpr}\n"
+    publish._require_signer(good, fpr, "file")
+    with pytest.raises(ScriptError, match="expired|bad"):
+        publish._require_signer(f"[GNUPG:] {marker} 1234 x\n{good}", fpr, "file")
+    with pytest.raises(ScriptError, match="no valid signature"):
+        publish._require_signer(good.splitlines()[1], fpr, "file")
+    with pytest.raises(ScriptError, match="unexpected key"):
+        publish._require_signer(good, "B" * 40, "file")
+
+
+def _git(path, *args):
+    import subprocess
+
+    return subprocess.run(
+        ["git", "-C", str(path), "-c", "user.name=t", "-c", "user.email=t@example.invalid", *args],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+@pytest.fixture
+def commits(tmp_path):
+    work = tmp_path / "work"
+    work.mkdir()
+    _git(work, "init", "--quiet")
+    _git(work, "commit", "--quiet", "--allow-empty", "-m", "one")
+    first = _git(work, "rev-parse", "HEAD")
+    _git(work, "commit", "--quiet", "--allow-empty", "-m", "two")
+    second = _git(work, "rev-parse", "HEAD")
+    return work, first, second
+
+
+def _state_from(tmp_path, commit):
+    state = tmp_path / "state"
+    state.mkdir(exist_ok=True)
+    (state / "release-manifest.json").write_text(json.dumps({"source_commit": commit}))
+    return state
+
+
+def test_ancestry_accepts_the_same_or_an_older_state_commit(commits, tmp_path, monkeypatch):
+    work, first, second = commits
+    monkeypatch.chdir(work)
+    publish.check_ancestry(tmp_path / "none", second)
+    publish.check_ancestry(_state_from(tmp_path, first), second)
+    publish.check_ancestry(_state_from(tmp_path, second), second)
+    publish.check_ancestry(_state_from(tmp_path, "unknown"), second)
+
+
+def test_ancestry_refuses_a_state_from_a_newer_or_foreign_commit(commits, tmp_path, monkeypatch):
+    work, first, second = commits
+    monkeypatch.chdir(work)
+    with pytest.raises(ScriptError, match="not an ancestor"):
+        publish.check_ancestry(_state_from(tmp_path, second), first)
+    with pytest.raises(ScriptError, match="not a full commit id"):
+        publish.check_ancestry(_state_from(tmp_path, "abc"), second)
+
+
+def test_a_manifest_with_an_unsafe_package_name_is_not_downloaded(monkeypatch, tmp_path):
+    import trivy_gate
+
+    def fetch(url, out, fingerprint):
+        manifest = {"packages": {"../evil_amd64.deb": "0" * 64}}
+        (out / "release-manifest.json").write_text(json.dumps(manifest))
+        return True
+
+    monkeypatch.setattr(publish, "fetch_public_state", fetch)
+    with pytest.raises(ScriptError, match="unsafe package name"):
+        trivy_gate.fetch_published("https://example.invalid", "amd64", tmp_path, "A" * 40)
+
+
+def test_signing_secrets_are_not_inherited_by_child_processes(monkeypatch):
+    monkeypatch.setenv("APT_GPG_PASSPHRASE", "secret")
+    monkeypatch.setenv("APT_GPG_PRIVATE_KEY", "key")
+    monkeypatch.setenv("GNUPGHOME", "/tmp/x")
+    env = publish._clean_env()
+    assert "APT_GPG_PASSPHRASE" not in env
+    assert "APT_GPG_PRIVATE_KEY" not in env
+    assert env["GNUPGHOME"] == "/tmp/x"
+
+
+def _step_text(job):
+    return "\n".join(
+        str(step.get("run", "")) + json.dumps(step.get("env", {})) for step in job["steps"]
+    )
+
+
+def test_the_job_that_runs_the_built_binary_cannot_attest_or_sign():
+    jobs = _load_workflow("build.yml")["jobs"]
+    test_job, package_job = jobs["install-test"], jobs["package"]
+    assert set(test_job["permissions"]) == {"contents"}
+    assert "scripts/test.py" in _step_text(test_job)
+    assert "attest-build-provenance" not in json.dumps(test_job)
+    assert "scripts/test.py" not in _step_text(package_job)
+    assert "attest-build-provenance" in json.dumps(package_job)
+    assert {"package", "install-test"} <= set(_needs(jobs["prepare-apt-repository"]))
+
+
+def test_recovery_and_confirmation_are_bound_to_the_expected_release():
+    jobs = _load_workflow("build.yml")["jobs"]
+    recover = _step_text(jobs["recover-stage"])
+    assert "--expect-package-version" in recover
+    assert "--expect-release-id" in recover
+    confirm = jobs["confirm-published"]
+    assert {"sign-and-publish", "recover-stage"} <= set(_needs(confirm))
+    text = _step_text(confirm)
+    assert "verify-state" in text
+    assert text.count("--expect-release-id") >= 2
+    verify = _step_text(jobs["verify-publication"])
+    assert '[ -n "$RELEASE_ID" ]' in verify

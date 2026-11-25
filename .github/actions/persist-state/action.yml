@@ -22,4 +22,5 @@ runs:
         git -c user.name=github-actions[bot] -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
           commit --quiet -m "$MESSAGE"
         auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+        echo "::add-mask::${auth#AUTHORIZATION: basic }"
         git -c "http.extraheader=$auth" push "https://github.com/${REPO}.git" HEAD:refs/heads/apt-repo

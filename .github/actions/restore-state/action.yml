@@ -24,7 +24,7 @@ runs:
         auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
         echo "::add-mask::${auth#AUTHORIZATION: basic }"
         rc=0
-        git ls-remote --exit-code --heads "https://github.com/${REPO}.git" apt-repo >/dev/null 2>&1 || rc=$?
+        git ls-remote --exit-code --heads "https://github.com/${REPO}.git" apt-repo >/dev/null 2>ls-remote.err || rc=$?
         if [ "$rc" -eq 0 ]; then
           git -c "http.extraheader=$auth" clone --quiet --branch apt-repo "https://github.com/${REPO}.git" repo-state
         elif [ "$rc" -eq 2 ]; then
@@ -32,5 +32,6 @@ runs:
           git init --quiet --initial-branch apt-repo repo-state
         else
           echo "ERROR: cannot query the apt-repo branch (git exit $rc)" >&2
+          cat ls-remote.err >&2
           exit 1
         fi

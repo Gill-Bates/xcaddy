@@ -44,6 +44,16 @@ PACKAGE = "caddy-custom"
 PAGES_URL = "https://gill-bates.github.io/xcaddy"
 
 
+SECRET_ENV = ("APT_GPG_PRIVATE_KEY", "APT_GPG_PASSPHRASE")
+
+
+def _clean_env(**extra: str) -> dict[str, str]:
+    """Environment for child processes that never need the signing secrets (they use stdin)."""
+    env = {k: v for k, v in os.environ.items() if k not in SECRET_ENV}
+    env.update(extra)
+    return env
+
+
 def _checked_gnupg_path() -> Path:
     """Return GNUPGHOME if it lies strictly below a temporary root (RUNNER_TEMP or the temp dir)."""
     value = os.environ.get("GNUPGHOME")
@@ -68,7 +78,7 @@ def gnupg_home() -> Path:
 def fingerprint_of(home: Path, secret: bool = True) -> str:
     listing = run(
         ["gpg", "--batch", "--with-colons", "--list-secret-keys" if secret else "--list-keys"],
-        env={**os.environ, "GNUPGHOME": str(home)},
+        env=_clean_env(GNUPGHOME=str(home)),
     ).stdout
     for line in listing.splitlines():
         if line.startswith("fpr:"):
@@ -89,7 +99,7 @@ def import_key(require_passphrase: bool = True) -> str:
     (home / "gpg-agent.conf").write_text(
         "allow-preset-passphrase\ndefault-cache-ttl 3600\nmax-cache-ttl 3600\n", encoding="utf-8"
     )
-    env = {**os.environ, "GNUPGHOME": str(home)}
+    env = _clean_env(GNUPGHOME=str(home))
     run(["gpg", "--batch", "--import"], env=env, input_text=key)
     fpr = fingerprint_of(home)
     expected = os.environ.get("APT_GPG_KEY_ID", "").replace(" ", "").upper()
@@ -118,14 +128,14 @@ def cleanup_keyring() -> None:
     if not os.environ.get("GNUPGHOME"):
         return
     home = _checked_gnupg_path()
-    run(["gpgconf", "--kill", "gpg-agent"], check=False, env={**os.environ})
+    run(["gpgconf", "--kill", "gpg-agent"], check=False, env=_clean_env())
     shutil.rmtree(home, ignore_errors=True)
 
 
 def make_throwaway_key(home: Path) -> str:
     """Create an unprotected test key in home; only for tests, never for publishing."""
     home.mkdir(mode=0o700, parents=True, exist_ok=True)
-    env = {**os.environ, "GNUPGHOME": str(home)}
+    env = _clean_env(GNUPGHOME=str(home))
     run(
         [
             "gpg",
@@ -146,7 +156,7 @@ def make_throwaway_key(home: Path) -> str:
 
 
 def reprepro(repo: Path, *args: str, check: bool = True):
-    return run(["reprepro", "-b", repo, *args], check=check)
+    return run(["reprepro", "-b", repo, *args], check=check, env=_clean_env())
 
 
 def init_repo(repo: Path, fingerprint: str) -> None:
@@ -171,7 +181,7 @@ def _cmp(left: str, right: str) -> int:
 
 
 def deb_field(deb: Path, field: str) -> str:
-    return run(["dpkg-deb", "--field", deb, field]).stdout.strip()
+    return run(["dpkg-deb", "--field", deb, field], env=_clean_env()).stdout.strip()
 
 
 def add_packages(repo: Path, debs: list[Path], archs: tuple[str, ...] = ARCHS) -> bool:
@@ -267,7 +277,7 @@ def prune_retained(repo: Path, dist: Path) -> None:
 
 
 def _gpg_env() -> dict[str, str]:
-    return {**os.environ, "GNUPGHOME": str(gnupg_home())}
+    return _clean_env(GNUPGHOME=str(gnupg_home()))
 
 
 def add_by_hash(repo: Path, fingerprint: str, now: float | None = None) -> None:
@@ -335,6 +345,9 @@ def finalize(
         raise ScriptError("public key export failed")
     (repo / "gpg.key").write_text(key, encoding="utf-8")
     package_version = f"{caddy_version}+custom.{revision}"
+    for deb in debs:
+        if deb_field(deb, "Version") != package_version:
+            raise ScriptError(f"{deb.name} is not version {package_version}; refusing to sign")
     packages = {d.name: sha256_file(d) for d in sorted(debs)}
     release_id = hashlib.sha256(
         json.dumps([package_version, ihash, packages], sort_keys=True).encode()
@@ -395,13 +408,34 @@ def require_fingerprint(value: str) -> str:
     return value
 
 
-def verify_state(directory: Path, fingerprint: str) -> None:
-    """Verify manifest and status signatures; the pinned primary fingerprint must be the signer."""
+BAD_SIGNATURE_STATUS = re.compile(r"\[GNUPG:\] (BADSIG|EXPSIG|EXPKEYSIG|REVKEYSIG|ERRSIG) ")
+
+
+def _require_signer(status: str, fingerprint: str, what: str) -> None:
+    """Accept only a good signature from the pinned primary key; expired or revoked keys fail."""
+    lines = status.splitlines()
+    if any(BAD_SIGNATURE_STATUS.match(ln) for ln in lines):
+        raise ScriptError(f"{what}: signature is bad, expired or made by an expired or revoked key")
+    signers = [ln.split()[-1] for ln in lines if " VALIDSIG " in ln]
+    if not any(" GOODSIG " in ln for ln in lines) or not signers:
+        raise ScriptError(f"{what}: no valid signature")
+    if signers[0].upper() != fingerprint:
+        raise ScriptError(f"{what} is signed by an unexpected key")
+
+
+def verify_state(
+    directory: Path, fingerprint: str, release_id: str = "", package_version: str = ""
+) -> dict:
+    """Verify manifest and status; return the manifest.
+
+    The pinned primary fingerprint must be the signer. Given release_id or package_version, the
+    manifest must describe exactly that release, so an older signed state cannot stand in for it.
+    """
     require_tools("gpg")
     fingerprint = require_fingerprint(fingerprint)
     with tempfile.TemporaryDirectory(prefix="verify-state-") as tmp:
         os.chmod(tmp, 0o700)
-        env = {**os.environ, "GNUPGHOME": tmp}
+        env = _clean_env(GNUPGHOME=tmp)
         run(["gpg", "--batch", "--import", directory / "gpg.key"], env=env)
         for name in ("release-manifest.json", "release-status.json"):
             out = run(
@@ -416,11 +450,18 @@ def verify_state(directory: Path, fingerprint: str) -> None:
                 ],
                 env=env,
             ).stdout
-            signers = [ln.split()[-1] for ln in out.splitlines() if " VALIDSIG " in ln]
-            if not signers:
-                raise ScriptError(f"{name}: no valid signature")
-            if signers[0].upper() != fingerprint:
-                raise ScriptError(f"{name} is signed by an unexpected key")
+            _require_signer(out, fingerprint, name)
+    manifest = json.loads((directory / "release-manifest.json").read_text(encoding="utf-8"))
+    status = json.loads((directory / "release-status.json").read_text(encoding="utf-8"))
+    if status.get("release_id") != manifest.get("release_id"):
+        raise ScriptError("release status belongs to a different release than the manifest")
+    if release_id and manifest.get("release_id") != release_id:
+        raise ScriptError(f"served release is {manifest.get('release_id')}, expected {release_id}")
+    if package_version and manifest.get("package_version") != package_version:
+        raise ScriptError(
+            f"state holds {manifest.get('package_version')}, expected {package_version}"
+        )
+    return manifest
 
 
 def check_ancestry(repo: Path, commit: str) -> None:
@@ -433,7 +474,12 @@ def check_ancestry(repo: Path, commit: str) -> None:
         return
     if not re.fullmatch(r"[0-9a-f]{40}", old) or not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise ScriptError("source_commit is not a full commit id")
-    if run(["git", "merge-base", "--is-ancestor", old, commit], check=False).returncode != 0:
+    if (
+        run(
+            ["git", "merge-base", "--is-ancestor", old, commit], check=False, env=_clean_env()
+        ).returncode
+        != 0
+    ):
         raise ScriptError(f"published state comes from {old}, which is not an ancestor of {commit}")
 
 
@@ -539,12 +585,10 @@ def verify_site(
     dist = site / "dists" / CODENAME
     with tempfile.TemporaryDirectory(prefix="verify-gnupg-") as tmp:
         os.chmod(tmp, 0o700)
-        env = {**os.environ, "GNUPGHOME": tmp}
+        env = _clean_env(GNUPGHOME=tmp)
         run(["gpg", "--batch", "--import", site / "gpg.key"], env=env)
         out = run(["gpg", "--batch", "--status-fd", "2", "--decrypt", dist / "InRelease"], env=env)
-        signers = [ln.split()[-1] for ln in out.stderr.splitlines() if " VALIDSIG " in ln]
-        if not signers or signers[0].upper() != fingerprint:
-            raise ScriptError("InRelease is not signed by the expected key")
+        _require_signer(out.stderr, fingerprint, "InRelease")
         release = (dist / "Release").read_text(encoding="utf-8")
         if out.stdout != release:
             raise ScriptError("InRelease and Release contain different metadata")
@@ -560,11 +604,7 @@ def verify_site(
             ],
             env=env,
         )
-        detached_signers = [
-            ln.split()[-1] for ln in detached.stdout.splitlines() if " VALIDSIG " in ln
-        ]
-        if not detached_signers or detached_signers[0].upper() != fingerprint:
-            raise ScriptError("Release.gpg is not signed by the expected key")
+        _require_signer(detached.stdout, fingerprint, "Release.gpg")
     manifest = _verify_state_files(site, fingerprint, release_id)
     by_hash_enabled = "Acquire-By-Hash: yes" in release
     hashes = _release_hashes(release)
@@ -609,14 +649,7 @@ def _verify_state_files(site: Path, fingerprint: str, release_id: str) -> dict |
         return None
     if not all(present):
         raise ScriptError("release manifest and status files are incomplete")
-    verify_state(site, fingerprint)
-    manifest = json.loads((site / "release-manifest.json").read_text(encoding="utf-8"))
-    status = json.loads((site / "release-status.json").read_text(encoding="utf-8"))
-    if status.get("release_id") != manifest.get("release_id"):
-        raise ScriptError("release status belongs to a different release than the manifest")
-    if release_id and manifest.get("release_id") != release_id:
-        raise ScriptError(f"served release is {manifest.get('release_id')}, expected {release_id}")
-    return manifest
+    return verify_state(site, fingerprint, release_id)
 
 
 def _download(url: str, dest: Path, attempts: int = 6) -> None:
@@ -638,6 +671,8 @@ def verify_url(
 ) -> None:
     """Fetch everything the signed Release index lists and verify it like a local site."""
     fingerprint = require_fingerprint(fingerprint)
+    if not release_id:
+        raise ScriptError("the expected release id is required to verify a public repository")
     base = base.rstrip("/")
     dist = f"dists/{CODENAME}"
     with tempfile.TemporaryDirectory(prefix="verify-url-") as tmp:
@@ -724,12 +759,15 @@ def main() -> int:
     vst = sub.add_parser("verify-state")
     vst.add_argument("directory", type=Path)
     vst.add_argument("--fingerprint", required=True)
+    vst.add_argument("--expect-release-id", default="")
+    vst.add_argument("--expect-package-version", default="")
     anc = sub.add_parser("check-ancestry")
     anc.add_argument("--repo-dir", required=True, type=Path)
     anc.add_argument("--commit", required=True)
     vs = sub.add_parser("verify-site")
     vs.add_argument("site", type=Path)
     vs.add_argument("--fingerprint", required=True)
+    vs.add_argument("--expect-release-id", default="")
     rid = sub.add_parser("release-id")
     rid.add_argument("--repo-dir", required=True, type=Path)
     fp = sub.add_parser("fetch-public")
@@ -739,7 +777,7 @@ def main() -> int:
     vu = sub.add_parser("verify-url")
     vu.add_argument("url", nargs="?", default=PAGES_URL)
     vu.add_argument("--fingerprint", required=True)
-    vu.add_argument("--expect-release-id", default="")
+    vu.add_argument("--expect-release-id", required=True)
     ns = parser.parse_args()
 
     if ns.command == "import-key":
@@ -759,11 +797,11 @@ def main() -> int:
     elif ns.command == "set-status":
         write_status(ns.repo_dir, ns.fingerprint, ns.status)
     elif ns.command == "verify-state":
-        verify_state(ns.directory, ns.fingerprint)
+        verify_state(ns.directory, ns.fingerprint, ns.expect_release_id, ns.expect_package_version)
     elif ns.command == "check-ancestry":
         check_ancestry(ns.repo_dir, ns.commit)
     elif ns.command == "verify-site":
-        verify_site(ns.site, fingerprint=ns.fingerprint)
+        verify_site(ns.site, fingerprint=ns.fingerprint, release_id=ns.expect_release_id)
     elif ns.command == "release-id":
         manifest = json.loads((ns.repo_dir / "release-manifest.json").read_text(encoding="utf-8"))
         set_output("release_id", manifest["release_id"])

@@ -74,7 +74,8 @@ def apt_flow(old_deb: Path, new_deb: Path, check_binary: bool) -> None:
             def publish_deb(deb: Path, version: str) -> bool:
                 added = publish.add_packages(repo, [deb], (arch,))
                 if added:
-                    publish.finalize(repo, fpr, version.split("+")[0], 1, "test", [deb])
+                    caddy, _, revision = version.partition("+custom.")
+                    publish.finalize(repo, fpr, caddy, int(revision), "test", [deb])
                     publish.export_site(repo, site)
                     publish.verify_site(site, (arch,), fingerprint=fpr)
                 return added
