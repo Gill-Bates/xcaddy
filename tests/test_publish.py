@@ -450,3 +450,52 @@ def test_published_package_scan_verifies_the_signed_manifest(served, monkeypatch
 
 def _site_file(site, url):
     return (site / url.removeprefix("https://example.invalid/")).read_bytes()
+
+
+def _jobs(text):
+    """Job id to its block of text in a workflow file."""
+    body = text.split("\njobs:\n", 1)[1]
+    parts = re.split(r"^  ([\w-]+):\n", body, flags=re.MULTILINE)
+    return {name: "\n" + block for name, block in zip(parts[1::2], parts[2::2], strict=True)}
+
+
+def test_nothing_is_published_from_a_branch_other_than_the_default_branch():
+    from common import repo_root
+
+    jobs = _jobs((repo_root() / ".github/workflows/build.yml").read_text(encoding="utf-8"))
+    needs = {
+        name: re.findall(r"[\w-]+", m.group(1))
+        if (m := re.search(r"\n    needs: \[?([^\n\]]+)", b))
+        else []
+        for name, b in jobs.items()
+    }
+    condition = {
+        name: m.group(1) if (m := re.search(r"\n    if: ([^\n]+)", b)) else None
+        for name, b in jobs.items()
+    }
+
+    def gated(name):
+        cond = condition[name]
+        if cond and "default_branch" in cond:
+            return True
+        if cond is None:
+            return bool(needs[name]) and all(gated(n) for n in needs[name])
+        deps = re.findall(r"needs\.([\w-]+)\.result == 'success'", cond)
+        return bool(deps) and all(gated(n) for n in deps)
+
+    writers = [
+        name
+        for name, block in jobs.items()
+        if re.search(r"\n\s+(?:contents|pages): write|\n    environment:", block)
+    ]
+    assert {"sign-and-publish", "deploy-pages", "confirm-published"} <= set(writers)
+    ungated = [name for name in {*writers, "recover-stage"} if not gated(name)]
+    assert ungated == [], f"jobs that can write or publish from any branch: {ungated}"
+
+
+def test_triggers_that_start_a_release_run_only_on_the_default_branch():
+    from common import repo_root
+
+    text = (repo_root() / ".github/workflows/build.yml").read_text(encoding="utf-8")
+    assert re.search(r"push:\n\s+branches: \[main\]", text)
+    assert "schedule:" in text

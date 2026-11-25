@@ -73,3 +73,31 @@ def test_sbom_lists_every_module():
     bom = sbom(parse_build_info(BUILD_INFO), "2.11.9")
     assert {c["name"] for c in bom["components"]} >= {"golang.org/x/net", "github.com/a/rate"}
     assert bom["bomFormat"] == "CycloneDX"
+
+
+def test_build_info_ignores_everything_but_dependency_lines():
+    text = "go\tgo1.27.4\npath\tx/y\nmod\tx/y\t(devel)\t\ndep\ta/b\tv1.0.0\nbuild\t-ldflags=-s\n"
+    assert parse_build_info(text) == {"a/b": ("v1.0.0", "")}
+    assert parse_build_info("") == {}
+
+
+def test_a_locked_module_without_a_recorded_checksum_fails_the_build():
+    deps = parse_build_info("dep\tgithub.com/a/rate\tv0.1.0\n")
+    with pytest.raises(ScriptError, match="lock says"):
+        verify_lock(deps, ROWS[:1])
+
+
+def test_a_version_change_with_the_same_checksum_fails_the_build():
+    deps = parse_build_info(BUILD_INFO.replace("v0.15.0", "v0.16.0"))
+    with pytest.raises(ScriptError, match="github.com/b/bouncer"):
+        verify_lock(deps, ROWS)
+
+
+def test_unlocked_transitive_modules_do_not_fail_the_lock_check():
+    verify_lock(parse_build_info(BUILD_INFO + "\tdep\texample.org/extra\tv9.9.9\th1:zzz\n"), ROWS)
+
+
+def test_every_missing_module_is_reported_at_once():
+    problems = missing_modules(ROWS, set())
+    assert [p.split(":")[0] for p in problems] == ["github.com/a/rate", "github.com/b/bouncer"]
+    assert missing_modules(ROWS, {"http.handlers.crowdsec", "http.handlers.rate_limit"}) == []

@@ -8,6 +8,8 @@ GitHub-hosted runners and served from a GPG-signed APT repository on GitHub Page
 
 `build.yml` runs daily at 04:15 UTC, on `workflow_dispatch` (input `force_build`) and on pushes to `main`
 that touch `config/`, `scripts/`, `packaging/`, `apt/` or the workflow.
+GitHub starts `schedule` only on the default branch (`main`). Publishing (`sign-and-publish`, `recover-stage` and the jobs that
+depend on them) runs only on the default branch; a `workflow_dispatch` from any other branch builds and tests but publishes nothing.
 
 ```
 check-version -> build (amd64, arm64) -> test-and-package -> trivy-scan

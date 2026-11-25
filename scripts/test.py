@@ -99,6 +99,10 @@ def apt_flow(old_deb: Path, new_deb: Path, check_binary: bool) -> None:
             apt("install", NAME)
             check_installed(old_v, check_binary)
             expect(publish_deb(new_deb, new_v), "newer version published")
+            # stale lists and an empty archive cache: the old index must still resolve to a file
+            apt("clean")
+            apt("install", "--reinstall", NAME)
+            check_installed(old_v, check_binary)
             apt("update")
             apt("install", "--only-upgrade", NAME)
             check_installed(new_v, check_binary)

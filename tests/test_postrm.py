@@ -36,6 +36,68 @@ def test_purge_stays_inside_package_directories(tmp_path):
     assert (outside / "keep.txt").read_text() == "precious"
 
 
+def _patched_postrm(tmp_path, data, conf):
+    script = (repo_root() / "packaging/postrm").read_text()
+    script = script.replace("/var/lib/caddy-custom", str(data)).replace(
+        "/etc/caddy-custom", str(conf)
+    )
+    patched = tmp_path / "postrm"
+    patched.write_text(script)
+    return patched
+
+
+def _stub_bin(tmp_path, **bodies):
+    """Directory of stub commands that shadow the real ones, so a test never touches accounts."""
+    stubs = tmp_path / "stubs"
+    stubs.mkdir()
+    for name, body in bodies.items():
+        stub = stubs / name
+        stub.write_text(f"#!/bin/sh\n{body}\n")
+        stub.chmod(stub.stat().st_mode | stat.S_IXUSR)
+    return stubs
+
+
+def test_purge_removes_a_symlinked_package_directory_without_following_it(tmp_path):
+    outside, conf = tmp_path / "outside", tmp_path / "etc"
+    outside.mkdir()
+    conf.mkdir()
+    (outside / "keep.txt").write_text("precious")
+    data = tmp_path / "lib"
+    data.symlink_to(outside)
+    patched = _patched_postrm(tmp_path, data, conf)
+    stubs = _stub_bin(tmp_path, getent="exit 1")
+    env = {**os.environ, "PATH": f"{stubs}:{os.environ['PATH']}"}
+    result = subprocess.run(
+        [shutil.which("sh"), str(patched), "purge"], capture_output=True, text=True, env=env
+    )
+    assert result.returncode == 0, result.stderr
+    assert not data.is_symlink()
+    assert (outside / "keep.txt").read_text() == "precious"
+
+
+def test_a_failing_removal_does_not_abort_the_purge(tmp_path):
+    data, conf = tmp_path / "lib", tmp_path / "etc"
+    data.mkdir()
+    conf.mkdir()
+    patched = _patched_postrm(tmp_path, data, conf)
+    # rm fails like on a mount point inside the data directory; the account step must still run
+    calls = tmp_path / "calls.log"
+    stubs = _stub_bin(
+        tmp_path,
+        rm="exit 1",
+        getent="exit 0",
+        deluser=f'echo "$@" >> "{calls}"',
+        delgroup=f'echo "$@" >> "{calls}"',
+    )
+    env = {**os.environ, "PATH": f"{stubs}:{os.environ['PATH']}"}
+    result = subprocess.run(
+        [shutil.which("sh"), str(patched), "purge"], capture_output=True, text=True, env=env
+    )
+    assert result.returncode == 0, result.stderr
+    assert "could not remove" in result.stderr
+    assert len(calls.read_text().splitlines()) == 2
+
+
 def test_remove_keeps_configuration_and_data(tmp_path):
     data = tmp_path / "lib"
     data.mkdir()
