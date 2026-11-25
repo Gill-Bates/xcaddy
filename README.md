@@ -20,6 +20,7 @@ check-version -> build (amd64, arm64) -> package -> install-test, trivy-scan
   build and packaging files, Go and xcaddy versions) with the public `release-manifest.json`.
   Nothing changed: the run ends successfully with "No new version".
 - Publishing needs both architectures, passing tests, a passing Trivy gate and valid packages.
+- Runs are serialized and never cancelled; GitHub keeps one waiting run, so a newer run replaces a waiting `workflow_dispatch` with `force_build`. Dispatch it again if it was replaced.
   A failed run never touches the published state; the state lives on the `apt-repo` branch (reprepro
   `conf`, `db`, pool) and is pushed fast-forward only.
 - `stable` holds only the newest version per architecture; reprepro drops older ones, which is the retention.

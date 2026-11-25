@@ -8,6 +8,7 @@ import re
 import shutil
 
 import pytest
+import yaml
 
 from check_version import decide, inputs_hash, latest_stable
 from common import ScriptError, dpkg_compare, repo_root
@@ -266,13 +267,26 @@ def test_a_confirmed_or_older_stage_does_not_override_the_public_state():
 
 
 def test_publication_chain_runs_when_one_of_the_publishing_jobs_is_skipped():
-    # sign-and-publish (normal) or recover-stage (recovery) is always skipped; without a
-    # status function the implicit success() would skip every downstream job.
-    for job in ("verify-publication", "confirm-published", "verify-status"):
-        condition = next(
-            line for line in workflow_job(job).splitlines() if line.startswith("    if:")
-        )
-        assert "!cancelled()" in condition, job
+    # sign-and-publish (normal) or recover-stage (recovery) is always skipped; the implicit
+    # success() also sees transitive needs, so every downstream job needs a status function.
+    jobs = yaml.safe_load(
+        (repo_root() / ".github/workflows/build.yml").read_text(encoding="utf-8")
+    )["jobs"]
+
+    def needs(name):
+        value = jobs[name].get("needs", [])
+        return [value] if isinstance(value, str) else value
+
+    downstream = {"sign-and-publish", "recover-stage"}
+    while added := {
+        name for name in jobs if name not in downstream and downstream & set(needs(name))
+    }:
+        downstream |= added
+    downstream -= {"sign-and-publish", "recover-stage"}
+    assert {"deploy-pages", "verify-publication", "deploy-status", "verify-status"} <= downstream
+    for name in downstream:
+        condition = str(jobs[name].get("if", ""))
+        assert "always()" in condition or "!cancelled()" in condition, name
 
 
 def test_summary_requires_the_published_status_when_a_release_was_needed():

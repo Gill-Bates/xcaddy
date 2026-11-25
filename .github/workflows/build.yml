@@ -518,6 +518,7 @@ jobs:
 
   deploy-status:
     needs: confirm-published
+    if: ${{ !cancelled() && needs.confirm-published.result == 'success' }}
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     environment:
