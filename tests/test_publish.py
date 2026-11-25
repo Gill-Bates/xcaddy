@@ -53,7 +53,7 @@ def test_signed_site_verifies_and_noop_rerun(env):
     publish_version(repo, fpr, debs, "2.11.9+custom.1", 1)
     site = tmp / "site"
     publish.export_site(repo, site)
-    publish.verify_site(site)
+    publish.verify_site(site, fingerprint=fpr)
     assert not publish.add_packages(repo, debs("2.11.9+custom.1"))
 
 
@@ -65,7 +65,7 @@ def test_tampered_metadata_fails_verification(env):
     release = site / "dists/stable/Release"
     release.write_text(release.read_text().replace("Suite: stable", "Suite: evil"))
     with pytest.raises(ScriptError):
-        publish.verify_site(site)
+        publish.verify_site(site, fingerprint=fpr)
 
 
 def test_downgrade_and_missing_arch_are_refused(env):
@@ -126,14 +126,14 @@ def test_manifest_is_signed_and_by_hash_survives_version_change(env):
     assert "Acquire-By-Hash: yes" in (site / "dists/stable/Release").read_text()
     publish_version(repo, fpr, debs, "2.11.10+custom.1", 1)
     publish.export_site(repo, site)
-    publish.verify_site(site)
+    publish.verify_site(site, fingerprint=fpr)
     new_hashes = {p.name for p in site.glob("dists/**/by-hash/SHA256/*")}
     assert old_hashes < new_hashes
     manifest = (site / "release-manifest.json").read_text()
     assert "2.11.10+custom.1" in manifest
     (site / "release-manifest.json").write_text(manifest.replace("2.11.10", "2.99.99"))
     with pytest.raises(ScriptError):
-        publish.verify_site(site)
+        publish.verify_site(site, fingerprint=fpr)
 
 
 def test_manifest_is_immutable_and_status_is_separate(env):
@@ -149,11 +149,11 @@ def test_manifest_is_immutable_and_status_is_separate(env):
     assert '"PUBLISHED"' in (repo / "release-status.json").read_text()
     site = tmp / "site"
     publish.export_site(repo, site)
-    publish.verify_site(site)
+    publish.verify_site(site, fingerprint=fpr)
     status = site / "release-status.json"
     status.write_text(status.read_text().replace("PUBLISHED", "DEPLOYED"))
     with pytest.raises(ScriptError):
-        publish.verify_site(site)
+        publish.verify_site(site, fingerprint=fpr)
 
 
 def test_old_metadata_stays_fetchable_by_hash_until_grace_expires(env):
@@ -170,7 +170,7 @@ def test_old_metadata_stays_fetchable_by_hash_until_grace_expires(env):
     stale = [rel for rel in cached if (repo / rel).exists()]
     assert len(stale) < len(cached)
     publish.export_site(repo, tmp / "site")
-    publish.verify_site(tmp / "site")
+    publish.verify_site(tmp / "site", fingerprint=fpr)
 
 
 def test_publish_is_idempotent(env):

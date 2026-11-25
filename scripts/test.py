@@ -76,7 +76,7 @@ def apt_flow(old_deb: Path, new_deb: Path, check_binary: bool) -> None:
                 if added:
                     publish.finalize(repo, fpr, version.split("+")[0], 1, "test", [deb])
                     publish.export_site(repo, site)
-                    publish.verify_site(site, (arch,))
+                    publish.verify_site(site, (arch,), fingerprint=fpr)
                 return added
 
             expect(publish_deb(old_deb, old_v), "first version published and signature verified")

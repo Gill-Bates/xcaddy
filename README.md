@@ -75,8 +75,9 @@ gh secret set APT_GPG_PASSPHRASE --env apt-publish
 rm -rf "$GNUPGHOME"
 ```
 
-Publish the fingerprint here after the first release and set it as `APT_GPG_KEY_ID`; the version check then
-only trusts manifests signed by that key.
+Set the fingerprint as `APT_GPG_KEY_ID` **before the first release** (bootstrap: it is read from your own local key,
+never from the published `gpg.key`); every workflow, including the weekly rescan, fails without it and trusts only
+manifests and indexes signed by exactly that key.
 
 Key rotation (manual, tooling deferred): generate the new key as above; ship a `gpg.key` containing old and new
 public key (`cat old.asc new.asc`) and keep signing with the old key until clients have fetched it (at least

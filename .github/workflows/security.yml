@@ -29,12 +29,13 @@ jobs:
       - uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
         with:
           version: ${{ env.TRIVY_VERSION }}
-      - name: Scan the published package bytes (checked against the release manifest)
+      - name: Scan the published package bytes (signed manifest checked against the pinned fingerprint)
         env:
           ARCH: ${{ matrix.arch }}
+          KEY_ID: ${{ vars.APT_GPG_KEY_ID }}
         run: |
           mkdir reports
-          python3 scripts/trivy_gate.py scan-published --arch "$ARCH" --report "reports/trivy-${ARCH}-published.json"
+          python3 scripts/trivy_gate.py scan-published --arch "$ARCH" --fingerprint "$KEY_ID" --report "reports/trivy-${ARCH}-published.json"
       - name: Gate
         env:
           ARCH: ${{ matrix.arch }}

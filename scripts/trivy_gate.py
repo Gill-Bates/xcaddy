@@ -11,11 +11,11 @@ from __future__ import annotations
 import argparse
 import json
 import tempfile
-import urllib.request
 from collections import Counter
 from pathlib import Path
 from typing import Any
 
+import publish
 from common import (
     ScriptError,
     repo_root,
@@ -83,17 +83,17 @@ def require_go_modules(report: Path) -> None:
     raise ScriptError(f"{report.name}: no Go modules detected in the binary; scan is not trusted")
 
 
-def fetch_published(url: str, arch: str, dest: Path) -> Path:
-    """Download the published package for arch and verify it against the signed manifest."""
-    base = url.rstrip("/")
-    with urllib.request.urlopen(f"{base}/release-manifest.json", timeout=30) as response:
-        manifest = json.load(response)
+def fetch_published(url: str, arch: str, dest: Path, fingerprint: str) -> Path:
+    """Download the published package for arch; manifest signature and package bytes are checked."""
+    with tempfile.TemporaryDirectory(prefix="published-state-") as state:
+        if not publish.fetch_public_state(url, Path(state), fingerprint):
+            raise ScriptError("no release is published yet; nothing to scan")
+        manifest = json.loads((Path(state) / "release-manifest.json").read_text(encoding="utf-8"))
     names = [n for n in manifest.get("packages", {}) if n.endswith(f"_{arch}.deb")]
     if len(names) != 1:
         raise ScriptError(f"manifest lists {len(names)} packages for {arch}")
     deb = dest / names[0]
-    with urllib.request.urlopen(f"{base}/pool/main/c/caddy-custom/{names[0]}", timeout=120) as r:
-        deb.write_bytes(r.read())
+    publish._download(f"{url.rstrip('/')}/pool/main/c/caddy-custom/{names[0]}", deb)
     if sha256_file(deb) != manifest["packages"][names[0]]:
         raise ScriptError(f"{names[0]} does not match the SHA-256 in the release manifest")
     return deb
@@ -131,6 +131,7 @@ def main() -> int:
     deb.add_argument("--report", required=True, type=Path)
     pub = sub.add_parser("scan-published", help="verify and scan the public package bytes")
     pub.add_argument("--url", default="https://gill-bates.github.io/xcaddy")
+    pub.add_argument("--fingerprint", required=True, help="pinned signer (APT_GPG_KEY_ID)")
     pub.add_argument("--arch", required=True, choices=["amd64", "arm64"])
     pub.add_argument("--report", required=True, type=Path)
     cfg = sub.add_parser("scan-config", help="scan the build configuration of this repository")
@@ -148,7 +149,7 @@ def main() -> int:
         require_go_modules(ns.report)
     elif ns.command == "scan-published":
         with tempfile.TemporaryDirectory(prefix="published-") as tmp:
-            deb = fetch_published(ns.url, ns.arch, Path(tmp))
+            deb = fetch_published(ns.url, ns.arch, Path(tmp), ns.fingerprint)
             with tempfile.TemporaryDirectory(prefix="trivy-rootfs-") as root:
                 run(["dpkg-deb", "--extract", deb, root])
                 trivy_scan("rootfs", Path(root), ns.report)

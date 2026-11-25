@@ -173,7 +173,9 @@ jobs:
             --new-deb "dist/caddy-custom_${PKG_VERSION}_${ARCH}.deb" \
             --allow-host-changes --check-binary
       - name: Checksums
-        run: cd dist && sha256sum ./*.deb > SHA256SUMS
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: cd dist && sha256sum ./*.deb > "SHA256SUMS-${ARCH}"
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: dist/*.deb
@@ -254,7 +256,9 @@ jobs:
             python3 scripts/package.py validate "bundle/caddy-custom_${PKG_VERSION}_${arch}.deb" \
               --version "$PKG_VERSION" --arch "$arch" > /dev/null
           done
-          (cd bundle && sha256sum -c SHA256SUMS)
+          for arch in amd64 arm64; do
+            (cd bundle && sha256sum -c "SHA256SUMS-${arch}")
+          done
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-bundle
@@ -447,7 +451,7 @@ jobs:
           python3 scripts/publish.py set-status --repo-dir repo-state --fingerprint "$fpr" --status VERIFIED
           python3 scripts/publish.py set-status --repo-dir repo-state --fingerprint "$fpr" --status PUBLISHED
           python3 scripts/publish.py export-site --repo-dir repo-state --out site
-          python3 scripts/publish.py verify-site site
+          python3 scripts/publish.py verify-site site --fingerprint "$fpr"
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           name: pages-confirm
