@@ -11,6 +11,7 @@ GO_VERSION = "1.27.4"  # renovate: datasource=golang-version depName=go
 TRIVY_VERSION = "v0.76.2"  # renovate: datasource=github-releases depName=aquasecurity/trivy
 
 BUILD_FLAGS = "GOOS=linux CGO_ENABLED=0"
+# Mirrors Caddy PR #8368 until the dependency update reaches a stable Caddy release.
 BUILD_REPLACEMENTS = (
     "github.com/smallstep/certificates@v0.30.2=github.com/smallstep/certificates@v0.30.3-0.20261105213751-6d5a251fbe01",
     "go.step.sm/crypto@v0.92.0=go.step.sm/crypto@v0.92.1",

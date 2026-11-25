@@ -12,7 +12,7 @@ GitHub starts `schedule` only on the default branch (`main`). Publishing (`sign-
 depend on them) runs only on the default branch; a `workflow_dispatch` from any other branch builds and tests but publishes nothing.
 
 ```
-check-version -> build (amd64, arm64) -> test-and-package -> trivy-scan
+check-version -> build (amd64, arm64) -> package -> install-test, trivy-scan
   -> prepare-apt-repository -> sign-and-publish -> deploy-pages -> verify-publication
 ```
 

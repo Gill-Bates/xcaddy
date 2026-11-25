@@ -132,7 +132,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  test-and-package:
+  package:
     needs: [check-version, build]
     strategy:
       fail-fast: true
@@ -143,7 +143,8 @@ jobs:
           - arch: arm64
             runner: ubuntu-26.04-arm
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 20
+    timeout-minutes: 10
+    # The attested package is built here and the built binary never runs in this job.
     permissions:
       contents: read
       id-token: write
@@ -159,12 +160,57 @@ jobs:
       - name: Package
         env:
           PKG_VERSION: ${{ needs.check-version.outputs.package_version }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          python3 scripts/package.py build --version "$PKG_VERSION" --arch "$ARCH" \
+            --binary build/caddy --manifest build/build-manifest.json --out dist
+      - name: Checksums
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: cd dist && sha256sum ./*.deb > "SHA256SUMS-${ARCH}"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*.deb
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: deb-${{ matrix.arch }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  install-test:
+    needs: [check-version, build, package]
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-26.04
+          - arch: arm64
+            runner: ubuntu-26.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    # Runs the freshly built binary as root, so the job has no token scopes beyond reading.
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: build-${{ matrix.arch }}
+          path: build
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: deb-${{ matrix.arch }}
+          path: dist
+      - name: Baseline package
+        env:
           CADDY_VERSION: ${{ needs.check-version.outputs.caddy_version }}
           ARCH: ${{ matrix.arch }}
         run: |
           chmod +x build/caddy
-          python3 scripts/package.py build --version "$PKG_VERSION" --arch "$ARCH" \
-            --binary build/caddy --manifest build/build-manifest.json --out dist
           # Revision 0 sorts below every real release and serves as the upgrade-test baseline.
           python3 scripts/package.py build --version "${CADDY_VERSION}+custom.0" --arch "$ARCH" \
             --binary build/caddy --manifest build/build-manifest.json --out baseline
@@ -180,22 +226,9 @@ jobs:
             --old-deb "baseline/caddy-custom_${CADDY_VERSION}+custom.0_${ARCH}.deb" \
             --new-deb "dist/caddy-custom_${PKG_VERSION}_${ARCH}.deb" \
             --allow-host-changes --check-binary
-      - name: Checksums
-        env:
-          ARCH: ${{ matrix.arch }}
-        run: cd dist && sha256sum ./*.deb > "SHA256SUMS-${ARCH}"
-      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-path: dist/*.deb
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: deb-${{ matrix.arch }}
-          path: dist/
-          if-no-files-found: error
-          retention-days: 7
 
   trivy-scan:
-    needs: test-and-package
+    needs: package
     strategy:
       fail-fast: false
       matrix:
@@ -242,7 +275,7 @@ jobs:
           retention-days: 30
 
   prepare-apt-repository:
-    needs: [check-version, test-and-package, trivy-scan]
+    needs: [check-version, package, install-test, trivy-scan]
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
@@ -519,7 +552,7 @@ jobs:
           exit 1
 
   summary:
-    needs: [check-version, build, test-and-package, trivy-scan, sign-and-publish, deploy-pages, verify-publication, confirm-published, deploy-status, verify-status]
+    needs: [check-version, build, package, install-test, trivy-scan, sign-and-publish, deploy-pages, verify-publication, confirm-published, deploy-status, verify-status]
     if: always()
     runs-on: ubuntu-26.04
     timeout-minutes: 5
