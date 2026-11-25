@@ -2,19 +2,6 @@
   "version": 1,
   "plugins": [
     {
-      "module": "github.com/caddy-dns/cloudflare",
-      "requested": "github.com/caddy-dns/cloudflare",
-      "version": "v0.2.4",
-      "sum": "h1:h51SY6+JeevBcPtQ6xZxGRakYzbGiOXeJCFowQj/bGg=",
-      "go_mod_sum": "h1:Rge8GoKEa65RIUd1GQ9DmOmnjD9FMztz5yiaKvf351E=",
-      "module_ids": [
-        "dns.providers.cloudflare"
-      ],
-      "module_ids_any": [
-        "dns.providers.cloudflare"
-      ]
-    },
-    {
       "module": "github.com/hslatman/caddy-crowdsec-bouncer",
       "requested": "github.com/hslatman/caddy-crowdsec-bouncer",
       "version": "v0.15.0",
