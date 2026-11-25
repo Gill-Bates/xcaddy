@@ -1,0 +1,6 @@
+Archive: stable
+Component: main
+Origin: xcaddy
+Label: xcaddy
+Architecture: arm64
+Description: Custom Caddy builds (caddy-custom)

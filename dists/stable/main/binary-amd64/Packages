@@ -1,0 +1,19 @@
+Package: caddy-custom
+Version: 2.11.9+custom.1
+Architecture: amd64
+Maintainer: xcaddy maintainers <noreply@users.noreply.github.com>
+Installed-Size: 52307
+Depends: adduser, ca-certificates, init-system-helpers
+Homepage: https://github.com/Gill-Bates/xcaddy
+Priority: optional
+Section: httpd
+Filename: pool/main/c/caddy-custom/caddy-custom_2.11.9+custom.1_amd64.deb
+Size: 13615088
+SHA256: d1a8428d04cc30b417a842ca570ab7d97d3778ea75dfeb850661557436289912
+SHA1: 9e265cb06071e359358f3698812099fc1cd19719
+MD5sum: 8c8ad3901f4214ae2c219c87ef65fe85
+Description: Caddy web server with additional plugins (custom build)
+ Standalone build of Caddy created with xcaddy. It installs as
+ /usr/bin/caddy-custom with its own service, user and paths, so it can
+ coexist with the official caddy package.
+

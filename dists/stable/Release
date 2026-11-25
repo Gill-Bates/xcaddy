@@ -1,0 +1,30 @@
+Origin: xcaddy
+Label: xcaddy
+Suite: stable
+Codename: stable
+Date: Wed, 25 Nov 2026 19:56:21 UTC
+Architectures: amd64 arm64
+Components: main
+Description: Custom Caddy builds (caddy-custom)
+MD5Sum:
+ 83c7c24acc65edc8133c5d244d2aaa8c 787 main/binary-amd64/Packages
+ 1ba866ebe60387d0609dabd08b17dba8 520 main/binary-amd64/Packages.gz
+ 75bb08e2d0e5742b9fbb73e7b30185d7 129 main/binary-amd64/Release
+ 0865f3e3e43d43539b1186123d19b593 787 main/binary-arm64/Packages
+ 2196606c929171a76b308da0dc637b62 520 main/binary-arm64/Packages.gz
+ 00913f1fffaaf61362243fec9470f9ea 129 main/binary-arm64/Release
+SHA1:
+ 17099464e4f9d7082dd80894477962ae69da9731 787 main/binary-amd64/Packages
+ ba173381c07365e7c5321e0a05d03fcbad8ce77b 520 main/binary-amd64/Packages.gz
+ 85f61ad09485cfaa19b8971a1e4d61cbde1dbf14 129 main/binary-amd64/Release
+ 85ce18c179e9e1825ab3af50c27ea77ef899e93f 787 main/binary-arm64/Packages
+ a6a044a073f1f07015662150373f4bde8f1a1927 520 main/binary-arm64/Packages.gz
+ 3b08c93782a9cf7fedb4d891a9a9ff6000c25045 129 main/binary-arm64/Release
+Acquire-By-Hash: yes
+SHA256:
+ a454b31cc2df45be088431db8d207c8b106610ee8fc44e0b1f4a5c5e3e8c8d0b 787 main/binary-amd64/Packages
+ 587d483e1d563bf7d677e1f201cfcafbc32512b6a5d40d2cb5074e208fc8db10 520 main/binary-amd64/Packages.gz
+ f80f6facd4e2e5171359a3fc0267c1e2cec60948dc049e04b1b1d3e3e0e4f4de 129 main/binary-amd64/Release
+ 21b113130abb3e1dbb679edc193644f372f6c7d0e071f0c7031f26ab9b19b424 787 main/binary-arm64/Packages
+ c7ec2aa7d9677834a7928279b9f4ac002dddc65908ffd815beab33f87383608b 520 main/binary-arm64/Packages.gz
+ dd90b89f8ec807926a27d3355be92d28e3031883e79744db33569e77a1c7d14a 129 main/binary-arm64/Release

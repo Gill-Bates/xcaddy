@@ -1,0 +1,8 @@
+Origin: xcaddy
+Label: xcaddy
+Codename: stable
+Suite: stable
+Architectures: amd64 arm64
+Components: main
+Description: Custom Caddy builds (caddy-custom)
+SignWith: 80258C5678946FB5D46944E2406B3BB84A2F8EAB
