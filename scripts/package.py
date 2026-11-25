@@ -29,11 +29,13 @@ from common import (
 
 DOC_DIR = "usr/share/doc/caddy-custom"
 SCRIPTS = ("postinst", "prerm", "postrm")
-ALLOWED_PREFIXES = (
+ALLOWED_FILES = (
     "./usr/bin/caddy-custom",
     "./usr/lib/systemd/system/caddy-custom.service",
-    "./etc/caddy-custom",
-    f"./{DOC_DIR}",
+)
+ALLOWED_PREFIXES = (
+    "./etc/caddy-custom/",
+    f"./{DOC_DIR}/",
 )
 REQUIRED = (
     "./usr/bin/caddy-custom",
@@ -134,7 +136,7 @@ def validate_deb(deb: Path, arch: str, version: str) -> None:
         if need not in modes:
             problems.append(f"missing {need}")
     for path in modes:
-        if path not in PARENT_DIRS and not path.startswith(ALLOWED_PREFIXES):
+        if not (path in PARENT_DIRS or path in ALLOWED_FILES or path.startswith(ALLOWED_PREFIXES)):
             problems.append(f"unexpected path {path} (conflict risk with other packages)")
     if modes.get("./usr/bin/caddy-custom") != "-rwxr-xr-x":
         problems.append("caddy-custom binary must be -rwxr-xr-x")

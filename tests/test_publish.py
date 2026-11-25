@@ -9,6 +9,7 @@ import json
 import re
 import shutil
 import time
+from pathlib import Path
 
 import pytest
 import yaml
@@ -143,6 +144,17 @@ def test_default_gnupg_home_is_refused(monkeypatch):
     monkeypatch.delenv("GNUPGHOME", raising=False)
     with pytest.raises(ScriptError):
         publish.gnupg_home()
+
+
+def test_gnupg_home_outside_a_temporary_root_is_refused_and_never_deleted(monkeypatch):
+    victim = Path.home() / "gnupg-cleanup-victim"
+    monkeypatch.setenv("GNUPGHOME", str(victim))
+    monkeypatch.delenv("RUNNER_TEMP", raising=False)
+    with pytest.raises(ScriptError, match="temporary root"):
+        publish.gnupg_home()
+    with pytest.raises(ScriptError, match="temporary root"):
+        publish.cleanup_keyring()
+    assert not victim.exists()
 
 
 def test_manifest_is_signed_and_by_hash_survives_version_change(env):

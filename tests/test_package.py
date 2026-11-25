@@ -66,3 +66,25 @@ def test_the_same_inputs_build_byte_identical_packages(tmp_path, fake_elf):
     time.sleep(1.1)
     second = build_package("2.11.9+custom.1", "amd64", fake_elf("amd64"), manifest, tmp_path / "b")
     assert first.read_bytes() == second.read_bytes()
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        "usr/bin/caddy-custom-helper",
+        "etc/caddy-custom-malicious/config",
+        "usr/lib/systemd/system/caddy-custom.service.d/override.conf",
+    ],
+)
+def test_validation_rejects_paths_that_only_share_a_name_prefix(extra, fake_elf, tmp_path):
+    manifest = tmp_path / "m.json"
+    manifest.write_text("{}")
+    deb = build_package("2.11.9+custom.1", "amd64", fake_elf("amd64"), manifest, tmp_path / "o")
+    tree = tmp_path / "tree"
+    run(["dpkg-deb", "--raw-extract", deb, tree])
+    (tree / extra).parent.mkdir(parents=True, exist_ok=True)
+    (tree / extra).write_text("x")
+    tampered = tmp_path / "tampered.deb"
+    run(["dpkg-deb", "--root-owner-group", "--build", tree, tampered])
+    with pytest.raises(ScriptError, match="unexpected path"):
+        validate_deb(tampered, "amd64", "2.11.9+custom.1")

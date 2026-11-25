@@ -392,7 +392,7 @@ jobs:
 
   verify-publication:
     needs: [check-version, sign-and-publish, recover-stage, deploy-pages]
-    if: needs.deploy-pages.result == 'success'
+    if: ${{ !cancelled() && needs.check-version.result == 'success' && needs.deploy-pages.result == 'success' }}
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
@@ -422,7 +422,7 @@ jobs:
 
   confirm-published:
     needs: [check-version, verify-publication]
-    if: needs.verify-publication.result == 'success'
+    if: ${{ !cancelled() && needs.verify-publication.result == 'success' }}
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     environment: apt-publish
@@ -481,8 +481,27 @@ jobs:
         with:
           artifact_name: pages-confirm
 
+  verify-status:
+    needs: [check-version, sign-and-publish, recover-stage, deploy-status]
+    if: ${{ !cancelled() && needs.deploy-status.result == 'success' }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The public URL serves the signed status PUBLISHED for this release
+        env:
+          KEY_ID: ${{ vars.APT_GPG_KEY_ID }}
+          RELEASE_ID: ${{ needs.sign-and-publish.outputs.release_id || needs.recover-stage.outputs.release_id }}
+        run: |
+          python3 scripts/publish.py fetch-public "$PUBLIC_URL" --out "$RUNNER_TEMP/public" --fingerprint "$KEY_ID"
+          jq -e --arg id "$RELEASE_ID" '.release_id == $id and .status == "PUBLISHED"' "$RUNNER_TEMP/public/release-status.json"
+
   summary:
-    needs: [check-version, build, test-and-package, trivy-scan, sign-and-publish, deploy-pages, verify-publication, confirm-published, deploy-status]
+    needs: [check-version, build, test-and-package, trivy-scan, sign-and-publish, deploy-pages, verify-publication, confirm-published, deploy-status, verify-status]
     if: always()
     runs-on: ubuntu-26.04
     timeout-minutes: 5
@@ -493,12 +512,17 @@ jobs:
           SHOULD_BUILD: ${{ needs.check-version.outputs.should_build }}
           RECOVER: ${{ needs.check-version.outputs.recover }}
           RESULTS: ${{ join(needs.*.result, ' ') }}
+          DEPLOY_STATUS: ${{ needs.deploy-status.result }}
+          VERIFY_STATUS: ${{ needs.verify-status.result }}
         run: |
           if [[ " $RESULTS " == *" failure "* || " $RESULTS " == *" cancelled "* ]]; then
             echo "### Failed: the previously published state is unchanged; the next run recovers" >> "$GITHUB_STEP_SUMMARY"
             exit 1
           elif [[ "$SHOULD_BUILD" == "false" && "$RECOVER" != "true" ]]; then
             echo "### No new version: nothing to build" >> "$GITHUB_STEP_SUMMARY"
+          elif [[ "$DEPLOY_STATUS" != "success" || "$VERIFY_STATUS" != "success" ]]; then
+            echo "### Failed: a release was required but the PUBLISHED status was not deployed and verified" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
           else
             echo "### Succeeded: release published and confirmed" >> "$GITHUB_STEP_SUMMARY"
           fi

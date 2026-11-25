@@ -123,6 +123,33 @@ def test_purge_does_not_enter_a_mounted_package_directory(tmp_path):
     assert not calls.exists()
 
 
+def test_purge_leaves_a_package_directory_with_a_nested_mount_untouched(tmp_path):
+    data, conf = tmp_path / "lib", tmp_path / "etc"
+    (data / "bind").mkdir(parents=True)
+    conf.mkdir()
+    (data / "bind" / "other.txt").write_text("not ours")
+    mountinfo = tmp_path / "mountinfo"
+    mountinfo.write_text(f"1 0 8:1 / {data}/bind rw - ext4 /dev/sda1 rw\n")
+    patched = _patched_postrm(tmp_path, data, conf)
+    patched.write_text(patched.read_text().replace("/proc/self/mountinfo", str(mountinfo)))
+    calls = tmp_path / "calls.log"
+    stubs = _stub_bin(
+        tmp_path,
+        getent="exit 0",
+        deluser=f'echo deluser >> "{calls}"',
+        delgroup=f'echo delgroup >> "{calls}"',
+    )
+    env = {**os.environ, "PATH": f"{stubs}:{os.environ['PATH']}"}
+    result = subprocess.run(
+        [shutil.which("sh"), str(patched), "purge"], capture_output=True, text=True, env=env
+    )
+    assert result.returncode == 0, result.stderr
+    assert "cannot rule out mount points" in result.stderr
+    assert (data / "bind" / "other.txt").read_text() == "not ours"
+    assert not conf.exists()
+    assert not calls.exists()
+
+
 def test_remove_keeps_configuration_and_data(tmp_path):
     data = tmp_path / "lib"
     data.mkdir()

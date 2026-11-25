@@ -248,3 +248,18 @@ def test_a_confirmed_or_older_stage_does_not_override_the_public_state():
     assert (same.should_build, same.recover, same.reason) == (False, False, "unchanged")
     older = {**STATE, "revision": 2, "release_id": "r0"}
     assert decide("2.11.9", STATE, "aaa", False, PUBLISHED, staged=older).reason == "unchanged"
+
+
+def test_publication_chain_runs_when_one_of_the_publishing_jobs_is_skipped():
+    # sign-and-publish (normal) or recover-stage (recovery) is always skipped; without a
+    # status function the implicit success() would skip every downstream job.
+    for job in ("verify-publication", "confirm-published", "verify-status"):
+        condition = next(line for line in workflow_job(job).splitlines() if line.startswith("    if:"))
+        assert "!cancelled()" in condition, job
+
+
+def test_summary_requires_the_published_status_when_a_release_was_needed():
+    block = workflow_job("summary")
+    assert "verify-status" in block
+    assert 'DEPLOY_STATUS: ${{ needs.deploy-status.result }}' in block
+    assert '"$VERIFY_STATUS" != "success"' in block

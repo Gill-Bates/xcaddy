@@ -44,12 +44,23 @@ PACKAGE = "caddy-custom"
 PAGES_URL = "https://gill-bates.github.io/xcaddy"
 
 
+def _checked_gnupg_path() -> Path:
+    """Return GNUPGHOME if it lies strictly below a temporary root (RUNNER_TEMP or the temp dir)."""
+    value = os.environ.get("GNUPGHOME")
+    if not value:
+        raise ScriptError("GNUPGHOME must point to a temporary directory")
+    path = Path(value).resolve()
+    roots = {Path(tempfile.gettempdir()).resolve()}
+    if os.environ.get("RUNNER_TEMP"):
+        roots.add(Path(os.environ["RUNNER_TEMP"]).resolve())
+    if not any(path != root and path.is_relative_to(root) for root in roots):
+        raise ScriptError(f"GNUPGHOME {value} is not a directory below a temporary root")
+    return path
+
+
 def gnupg_home() -> Path:
     """Return the temporary GNUPGHOME; refuse to touch a default keyring."""
-    value = os.environ.get("GNUPGHOME")
-    if not value or Path(value).resolve() == Path.home().resolve() / ".gnupg":
-        raise ScriptError("GNUPGHOME must point to a temporary directory")
-    home = Path(value)
+    home = _checked_gnupg_path()
     home.mkdir(mode=0o700, parents=True, exist_ok=True)
     return home
 
@@ -104,11 +115,11 @@ def import_key(require_passphrase: bool = True) -> str:
 
 
 def cleanup_keyring() -> None:
-    value = os.environ.get("GNUPGHOME")
-    if not value:
+    if not os.environ.get("GNUPGHOME"):
         return
+    home = _checked_gnupg_path()
     run(["gpgconf", "--kill", "gpg-agent"], check=False, env={**os.environ})
-    shutil.rmtree(value, ignore_errors=True)
+    shutil.rmtree(home, ignore_errors=True)
 
 
 def make_throwaway_key(home: Path) -> str:

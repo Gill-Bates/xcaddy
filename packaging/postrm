@@ -8,6 +8,10 @@ remove | purge)
     if [ "$1" = purge ]; then deb-systemd-helper purge caddy-custom.service >/dev/null || true; deb-systemd-helper unmask caddy-custom.service >/dev/null || true; fi
     ;;
 esac
+# True when a mount point lies at or below $1; --one-file-system does not see bind mounts of one filesystem.
+has_mount_below() {
+    awk -v d="$1" '$5 == d || index($5, d "/") == 1 { found = 1 } END { exit !found }' /proc/self/mountinfo
+}
 if [ "$1" = purge ]; then
     # one-file-system and no symlink following keep the purge inside the package directories
     cleanup_complete=1
@@ -17,6 +21,9 @@ if [ "$1" = purge ]; then
         elif [ -d "$d" ]; then
             if mountpoint -q "$d"; then
                 echo "caddy-custom: $d is a mount point; leaving its data and service account" >&2
+                cleanup_complete=0
+            elif [ ! -r /proc/self/mountinfo ] || has_mount_below "$d"; then
+                echo "caddy-custom: cannot rule out mount points in $d; leaving its data and service account" >&2
                 cleanup_complete=0
             elif ! rm -rf --one-file-system "$d"; then
                 echo "caddy-custom: could not remove all of $d (mount point inside?)" >&2
