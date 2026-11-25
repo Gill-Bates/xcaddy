@@ -4,12 +4,14 @@
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
 #
 
+import copy
 import json
 import re
 import shutil
 import time
 
 import pytest
+import yaml
 
 import publish
 from common import ScriptError
@@ -452,50 +454,142 @@ def _site_file(site, url):
     return (site / url.removeprefix("https://example.invalid/")).read_bytes()
 
 
-def _jobs(text):
-    """Job id to its block of text in a workflow file."""
-    body = text.split("\njobs:\n", 1)[1]
-    parts = re.split(r"^  ([\w-]+):\n", body, flags=re.MULTILINE)
-    return {name: "\n" + block for name, block in zip(parts[1::2], parts[2::2], strict=True)}
+DEFAULT_BRANCH_GATE = (
+    "github.ref == format('refs/heads/{0}', github.event.repository.default_branch)"
+)
+SUCCESS_TERM = re.compile(r"needs\.([\w-]+)\.result == 'success'")
+PUBLISHING_PERMISSIONS = {"contents", "pages", "packages", "deployments", "actions"}
+
+
+def _load_workflow(name):
+    from common import repo_root
+
+    return yaml.safe_load((repo_root() / ".github/workflows" / name).read_text(encoding="utf-8"))
+
+
+def _needs(job):
+    needs = job.get("needs", [])
+    return [needs] if isinstance(needs, str) else list(needs)
+
+
+def _publishes(job):
+    """True for a job that can write to the repository or Pages, or that reads a secret."""
+    permissions = job.get("permissions") or {}
+    if permissions == "write-all" or any(
+        permissions.get(scope) == "write" for scope in PUBLISHING_PERMISSIONS
+    ):
+        return True
+    return "environment" in job or "secrets." in json.dumps(job)
+
+
+def _directly_gated(condition):
+    if not isinstance(condition, str) or "||" in condition:
+        return False
+    return DEFAULT_BRANCH_GATE in [" ".join(part.split()) for part in condition.split("&&")]
+
+
+def _ungated_publishers(workflow):
+    jobs = workflow["jobs"]
+    verdict = {}
+
+    def gated(name):
+        if name not in verdict:
+            verdict[name] = False  # a dependency cycle never counts as gated
+            verdict[name] = _gated(name)
+        return verdict[name]
+
+    def _gated(name):
+        job = jobs[name]
+        condition = job.get("if")
+        if _directly_gated(condition):
+            return True
+        needs = _needs(job)
+        if condition is None:
+            return bool(needs) and all(gated(n) for n in needs)
+        residue = SUCCESS_TERM.sub("", condition)
+        residue = re.sub(r"always\(\)|&&|\|\||[()\s]", "", residue)
+        deps = SUCCESS_TERM.findall(condition)
+        return not residue and bool(deps) and all(n in needs and gated(n) for n in deps)
+
+    return sorted(name for name, job in jobs.items() if _publishes(job) and not gated(name))
+
+
+def _mutate(workflow, mutation):
+    mutated = copy.deepcopy(workflow)
+    mutation(mutated["jobs"])
+    return mutated
 
 
 def test_nothing_is_published_from_a_branch_other_than_the_default_branch():
-    from common import repo_root
+    workflow = _load_workflow("build.yml")
+    publishers = {name for name, job in workflow["jobs"].items() if _publishes(job)}
+    assert {"sign-and-publish", "deploy-pages", "confirm-published", "deploy-status"} <= publishers
+    assert _ungated_publishers(workflow) == []
+    # recover-stage stages the Pages artifact without a write scope, so it is gated explicitly.
+    assert _directly_gated(workflow["jobs"]["recover-stage"]["if"])
 
-    jobs = _jobs((repo_root() / ".github/workflows/build.yml").read_text(encoding="utf-8"))
-    needs = {
-        name: re.findall(r"[\w-]+", m.group(1))
-        if (m := re.search(r"\n    needs: \[?([^\n\]]+)", b))
-        else []
-        for name, b in jobs.items()
-    }
-    condition = {
-        name: m.group(1) if (m := re.search(r"\n    if: ([^\n]+)", b)) else None
-        for name, b in jobs.items()
-    }
 
-    def gated(name):
-        cond = condition[name]
-        if cond and "default_branch" in cond:
-            return True
-        if cond is None:
-            return bool(needs[name]) and all(gated(n) for n in needs[name])
-        deps = re.findall(r"needs\.([\w-]+)\.result == 'success'", cond)
-        return bool(deps) and all(gated(n) for n in deps)
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda jobs: jobs["sign-and-publish"].pop("if"),
+        lambda jobs: jobs["sign-and-publish"].update(
+            {"if": DEFAULT_BRANCH_GATE.replace("==", "!=")}
+        ),
+        lambda jobs: jobs["sign-and-publish"].update(
+            {"if": f"github.event_name == 'workflow_dispatch' || {DEFAULT_BRANCH_GATE}"}
+        ),
+        lambda jobs: jobs["sign-and-publish"].update(
+            {"if": "contains(github.event.repository.default_branch, github.ref)"}
+        ),
+        lambda jobs: jobs["deploy-pages"].update({"if": "always()"}),
+        lambda jobs: jobs["deploy-pages"].update({"needs": ["check-version"]}),
+        lambda jobs: jobs["confirm-published"].update({"if": "always()"}),
+        lambda jobs: jobs["confirm-published"].update(
+            {"if": "needs.verify-publication.result != 'failure'"}
+        ),
+        lambda jobs: jobs.update({"extra": {"needs": ["build"], "environment": "apt-publish"}}),
+        lambda jobs: jobs.update(
+            {"extra": {"needs": ["build"], "permissions": {"contents": "write"}}}
+        ),
+        lambda jobs: jobs.update(
+            {"extra": {"needs": ["build"], "steps": [{"env": {"K": "${{ secrets.APT_KEY }}"}}]}}
+        ),
+    ],
+)
+def test_the_branch_gate_check_detects_a_publish_path_from_any_branch(mutation):
+    mutated = _mutate(_load_workflow("build.yml"), mutation)
+    assert _ungated_publishers(mutated) != []
 
-    writers = [
-        name
-        for name, block in jobs.items()
-        if re.search(r"\n\s+(?:contents|pages): write|\n    environment:", block)
-    ]
-    assert {"sign-and-publish", "deploy-pages", "confirm-published"} <= set(writers)
-    ungated = [name for name in {*writers, "recover-stage"} if not gated(name)]
-    assert ungated == [], f"jobs that can write or publish from any branch: {ungated}"
+
+@pytest.mark.parametrize("name", ["ci.yml", "security.yml"])
+def test_the_other_workflows_never_publish(name):
+    assert [j for j, job in _load_workflow(name)["jobs"].items() if _publishes(job)] == []
 
 
 def test_triggers_that_start_a_release_run_only_on_the_default_branch():
-    from common import repo_root
+    triggers = _load_workflow("build.yml")[True]  # YAML 1.1 reads the key `on` as True
+    assert set(triggers) == {"schedule", "workflow_dispatch", "push"}
+    assert triggers["push"]["branches"] == ["main"]
+    assert "tags" not in triggers["push"]
 
-    text = (repo_root() / ".github/workflows/build.yml").read_text(encoding="utf-8")
-    assert re.search(r"push:\n\s+branches: \[main\]", text)
-    assert "schedule:" in text
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda on: on.update({"pull_request": {}}),
+        lambda on: on.update({"workflow_run": {"workflows": ["ci"]}}),
+        lambda on: on["push"].update({"branches": ["main", "feature/dev"]}),
+        lambda on: on["push"].pop("branches"),
+        lambda on: on["push"].update({"tags": ["v*"]}),
+    ],
+)
+def test_the_trigger_check_detects_a_run_that_can_start_elsewhere(mutation):
+    triggers = copy.deepcopy(_load_workflow("build.yml")[True])
+    mutation(triggers)
+    safe = (
+        set(triggers) == {"schedule", "workflow_dispatch", "push"}
+        and triggers["push"].get("branches") == ["main"]
+        and "tags" not in triggers["push"]
+    )
+    assert not safe

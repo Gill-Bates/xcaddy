@@ -89,6 +89,7 @@ def inputs_hash(root: Path) -> str:
         "scripts/plugins.py",
         "scripts/lock.py",
         "config/plugins.lock",
+        "apt/conf/distributions",
     ]
     files += sorted(
         p.relative_to(root).as_posix() for p in (root / "packaging").rglob("*") if p.is_file()

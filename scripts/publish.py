@@ -141,9 +141,7 @@ def reprepro(repo: Path, *args: str, check: bool = True):
 def init_repo(repo: Path, fingerprint: str) -> None:
     template = (repo_root() / "apt/conf/distributions").read_text(encoding="utf-8")
     (repo / "conf").mkdir(parents=True, exist_ok=True)
-    (repo / "conf/distributions").write_text(
-        template.replace("@SIGN_WITH@", fingerprint), encoding="utf-8"
-    )
+    (repo / "conf/distributions").write_text(template.replace("@SIGN_WITH@", fingerprint), encoding="utf-8")
 
 
 def list_versions(repo: Path) -> list[str]:
@@ -530,13 +528,23 @@ def verify_site(
         os.chmod(tmp, 0o700)
         env = {**os.environ, "GNUPGHOME": tmp}
         run(["gpg", "--batch", "--import", site / "gpg.key"], env=env)
-        out = run(["gpg", "--batch", "--status-fd", "1", "--verify", dist / "InRelease"], env=env)
-        signers = [ln.split()[-1] for ln in out.stdout.splitlines() if " VALIDSIG " in ln]
+        out = run(["gpg", "--batch", "--status-fd", "2", "--decrypt", dist / "InRelease"], env=env)
+        signers = [ln.split()[-1] for ln in out.stderr.splitlines() if " VALIDSIG " in ln]
         if not signers or signers[0].upper() != fingerprint:
             raise ScriptError("InRelease is not signed by the expected key")
-        run(["gpg", "--batch", "--verify", dist / "Release.gpg", dist / "Release"], env=env)
+        release = (dist / "Release").read_text(encoding="utf-8")
+        if out.stdout != release:
+            raise ScriptError("InRelease and Release contain different metadata")
+        detached = run(
+            ["gpg", "--batch", "--status-fd", "1", "--verify", dist / "Release.gpg", dist / "Release"],
+            env=env,
+        )
+        detached_signers = [
+            ln.split()[-1] for ln in detached.stdout.splitlines() if " VALIDSIG " in ln
+        ]
+        if not detached_signers or detached_signers[0].upper() != fingerprint:
+            raise ScriptError("Release.gpg is not signed by the expected key")
     manifest = _verify_state_files(site, fingerprint, release_id)
-    release = (dist / "Release").read_text(encoding="utf-8")
     by_hash_enabled = "Acquire-By-Hash: yes" in release
     hashes = _release_hashes(release)
     sizes = _release_sizes(release)

@@ -319,7 +319,7 @@ jobs:
           INPUTS_HASH: ${{ needs.check-version.outputs.inputs_hash }}
         run: |
           fpr=$(sed -n 's/^fingerprint=//p' fingerprint.txt | tail -n 1)
-          [ -f repo-state/conf/distributions ] || python3 scripts/publish.py init --repo-dir repo-state --fingerprint "$fpr"
+          python3 scripts/publish.py init --repo-dir repo-state --fingerprint "$fpr"
           python3 scripts/publish.py add --repo-dir repo-state bundle/*.deb | tee add.txt
           if grep -q '^added=true' add.txt; then
             python3 scripts/publish.py finalize --repo-dir repo-state --fingerprint "$fpr" \

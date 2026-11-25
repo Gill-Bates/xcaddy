@@ -128,8 +128,12 @@ def locked_plugins(entries: list[str], lock: dict[str, Any]) -> list[dict[str, A
     for module, entry in wanted.items():
         row = by_module[module]
         pinned = entry.partition("@")[2]
-        if pinned and not COMMIT_RE.fullmatch(pinned) and row["version"] != pinned:
+        if pinned and not COMMIT_RE.fullmatch(pinned) and row.get("version") != pinned:
             raise ScriptError(f"plugins.lock pins {module} at {row['version']}, not {pinned}")
+        if row.get("requested") != entry:
+            raise ScriptError(
+                f"plugins.lock request for {module} is stale; run scripts/lock.py update"
+            )
         if not str(row.get("sum", "")).startswith("h1:"):
             raise ScriptError(f"plugins.lock has no checksum for {module}")
         rows.append(row)
