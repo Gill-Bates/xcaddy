@@ -6,7 +6,14 @@
 
 import pytest
 
-from build import locked_args, missing_modules, parse_build_info, sbom, verify_lock
+from build import (
+    locked_args,
+    missing_modules,
+    parse_build_info,
+    replacement_args,
+    sbom,
+    verify_lock,
+)
 from common import ScriptError
 from lock import locked_plugins
 
@@ -58,6 +65,14 @@ def test_module_ids_are_checked_against_list_modules():
 
 def test_build_uses_only_locked_versions():
     assert locked_args(ROWS)[:2] == ["--with", "github.com/a/rate@v0.1.0"]
+
+
+def test_build_applies_all_pinned_dependency_replacements():
+    from toolchain import BUILD_REPLACEMENTS
+
+    assert replacement_args(BUILD_REPLACEMENTS) == [
+        arg for replacement in BUILD_REPLACEMENTS for arg in ("--replace", replacement)
+    ]
 
 
 def test_stale_lock_is_rejected():

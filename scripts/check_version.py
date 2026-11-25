@@ -102,7 +102,12 @@ def inputs_hash(root: Path) -> str:
             raise ScriptError(f"cannot read {name}: {exc}") from exc
         digest.update(f"{name}\0{hashlib.sha256(content).hexdigest()}\n".encode())
     digest.update("\n".join(load_plugins(root / "config/plugins.txt")).encode() + b"\0")
-    toolchain_pins = (toolchain.XCADDY_VERSION, toolchain.GO_VERSION, toolchain.BUILD_FLAGS)
+    toolchain_pins = (
+        toolchain.XCADDY_VERSION,
+        toolchain.GO_VERSION,
+        toolchain.BUILD_FLAGS,
+        *toolchain.BUILD_REPLACEMENTS,
+    )
     digest.update("\0".join(toolchain_pins).encode())
     return digest.hexdigest()
 

@@ -36,6 +36,10 @@ def locked_args(rows: list[dict[str, Any]]) -> list[str]:
     return [a for r in rows for a in ("--with", f"{r['module']}@{r['version']}")]
 
 
+def replacement_args(replacements: tuple[str, ...]) -> list[str]:
+    return [arg for replacement in replacements for arg in ("--replace", replacement)]
+
+
 def verify_binary(binary: Path, arch: str, version: str, rows: list[dict[str, Any]]) -> None:
     if elf_arch(binary) != arch:
         raise ScriptError(f"architecture mismatch: binary is {elf_arch(binary)}, expected {arch}")
@@ -114,6 +118,7 @@ def write_manifest(binary: Path, arch: str, version: str, rows: list[dict[str, A
         "go_version": run(["go", "env", "GOVERSION"]).stdout.strip(),
         "xcaddy_version": toolchain.XCADDY_VERSION,
         "build_flags": toolchain.BUILD_FLAGS,
+        "build_replacements": list(toolchain.BUILD_REPLACEMENTS),
         "inputs_hash": ihash,
         "build_fingerprint": build_fingerprint(version, ihash),
         "source_commit": os.environ.get("GITHUB_SHA", "unknown"),
@@ -147,7 +152,15 @@ def main() -> int:
     print(f"Building Caddy v{ns.caddy_version} for linux/{ns.arch}, {len(rows)} locked plugins")
     env = {**os.environ, "GOOS": "linux", "GOARCH": ns.arch, "CGO_ENABLED": "0"}
     run(
-        ["xcaddy", "build", f"v{ns.caddy_version}", *locked_args(rows), "--output", binary],
+        [
+            "xcaddy",
+            "build",
+            f"v{ns.caddy_version}",
+            *locked_args(rows),
+            *replacement_args(toolchain.BUILD_REPLACEMENTS),
+            "--output",
+            binary,
+        ],
         env=env,
     )
     binary.chmod(0o755)

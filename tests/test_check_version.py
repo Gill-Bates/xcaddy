@@ -95,6 +95,21 @@ def test_apt_configuration_changes_the_build_input_hash(tmp_path):
     assert inputs_hash(tmp_path) != before
 
 
+def test_dependency_replacements_change_the_build_input_hash(monkeypatch):
+    import check_version
+
+    before = inputs_hash(repo_root())
+    monkeypatch.setattr(
+        check_version.toolchain,
+        "BUILD_REPLACEMENTS",
+        (
+            *check_version.toolchain.BUILD_REPLACEMENTS,
+            "example.org/module@v1.0.0=example.org/module@v1.1.0",
+        ),
+    )
+    assert inputs_hash(repo_root()) != before
+
+
 @pytest.mark.parametrize(
     "status",
     [
@@ -254,12 +269,14 @@ def test_publication_chain_runs_when_one_of_the_publishing_jobs_is_skipped():
     # sign-and-publish (normal) or recover-stage (recovery) is always skipped; without a
     # status function the implicit success() would skip every downstream job.
     for job in ("verify-publication", "confirm-published", "verify-status"):
-        condition = next(line for line in workflow_job(job).splitlines() if line.startswith("    if:"))
+        condition = next(
+            line for line in workflow_job(job).splitlines() if line.startswith("    if:")
+        )
         assert "!cancelled()" in condition, job
 
 
 def test_summary_requires_the_published_status_when_a_release_was_needed():
     block = workflow_job("summary")
     assert "verify-status" in block
-    assert 'DEPLOY_STATUS: ${{ needs.deploy-status.result }}' in block
+    assert "DEPLOY_STATUS: ${{ needs.deploy-status.result }}" in block
     assert '"$VERIFY_STATUS" != "success"' in block
