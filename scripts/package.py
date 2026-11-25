@@ -99,7 +99,10 @@ def build_package(version: str, arch: str, binary: Path, manifest: Path, out: Pa
                 path.chmod(0o755)
             os.utime(path, (epoch, epoch), follow_symlinks=False)
         stage.chmod(0o755)
-        run(["dpkg-deb", "--root-owner-group", "-Zxz", "--build", stage, deb])
+        run(
+            ["dpkg-deb", "--root-owner-group", "-Zxz", "--build", stage, deb],
+            env={**os.environ, "SOURCE_DATE_EPOCH": str(epoch)},
+        )
     validate_deb(deb, arch, version)
     return deb
 

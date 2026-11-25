@@ -55,3 +55,14 @@ def test_validation_detects_wrong_version(fake_elf, tmp_path):
 def test_maintainer_scripts_exist():
     for name in ("postinst", "prerm", "postrm"):
         assert (repo_root() / "packaging" / name).is_file()
+
+
+def test_the_same_inputs_build_byte_identical_packages(tmp_path, fake_elf):
+    import time
+
+    manifest = tmp_path / "m.json"
+    manifest.write_text("{}")
+    first = build_package("2.11.9+custom.1", "amd64", fake_elf("amd64"), manifest, tmp_path / "a")
+    time.sleep(1.1)
+    second = build_package("2.11.9+custom.1", "amd64", fake_elf("amd64"), manifest, tmp_path / "b")
+    assert first.read_bytes() == second.read_bytes()

@@ -317,3 +317,136 @@ def test_fetch_public_state_reports_a_first_release_only_for_404(tmp_path, monke
     monkeypatch.setattr(publish.urllib.request, "urlopen", failing(503))
     with pytest.raises(ScriptError, match="503"):
         publish.fetch_public_state("https://example.invalid", tmp_path, "A" * 40)
+
+
+def _by_hash_package_entries(site):
+    """(Filename, SHA256) of every package named by any Packages index kept under by-hash."""
+    import gzip
+
+    entries = set()
+    for path in site.glob("dists/**/binary-*/by-hash/SHA256/*"):
+        data = path.read_bytes()
+        if data[:2] == b"\x1f\x8b":
+            data = gzip.decompress(data)
+        entries.update(publish._package_entries(data.decode("utf-8", errors="ignore")))
+    return entries
+
+
+def test_every_package_named_by_a_retained_index_stays_downloadable(env):
+    repo, fpr, debs, tmp = env
+    publish_version(repo, fpr, debs, "2.11.9+custom.1", 1)
+    publish_version(repo, fpr, debs, "2.11.10+custom.1", 1)
+    site = tmp / "site"
+    publish.export_site(repo, site)
+    entries = _by_hash_package_entries(site)
+    assert {name for name, _ in entries if "2.11.9" in name}
+    for filename, digest in entries:
+        assert (site / filename).is_file(), filename
+        assert publish.sha256_file(site / filename) == digest
+    publish.verify_site(site, fingerprint=fpr)
+
+
+def test_retained_packages_are_dropped_with_their_indexes_after_the_grace_period(env):
+    repo, fpr, debs, tmp = env
+    publish_version(repo, fpr, debs, "2.11.9+custom.1", 1)
+    publish_version(repo, fpr, debs, "2.11.10+custom.1", 1)
+    later = time.time() + (publish.BY_HASH_GRACE_DAYS + 1) * 86400
+    publish.add_by_hash(repo, fpr, now=later)
+    publish.add_by_hash(repo, fpr, now=later + 1)
+    publish.export_site(repo, tmp / "site")
+    assert not list((tmp / "site").glob("pool/**/*2.11.9*"))
+    assert list((tmp / "site").glob("pool/**/*2.11.10*"))
+
+
+def test_same_version_with_different_package_bytes_is_refused(env, fake_elf):
+    from package import build_package
+
+    repo, fpr, debs, tmp = env
+    publish_version(repo, fpr, debs, "2.11.9+custom.1", 1)
+    other = fake_elf("amd64", "other")
+    other.write_bytes(other.read_bytes() + b"changed")
+    changed = [
+        build_package("2.11.9+custom.1", "amd64", other, tmp / "m.json", tmp / "changed"),
+        debs("2.11.9+custom.1")[1],
+    ]
+    with pytest.raises(ScriptError, match="different package bytes"):
+        publish.add_packages(repo, changed)
+
+
+def test_an_architecture_missing_for_a_published_version_is_added(env):
+    repo, fpr, debs, tmp = env
+    built = debs("2.11.9+custom.1")
+    # simulate an interrupted run: only amd64 made it into the repository
+    publish.reprepro(repo, "includedeb", publish.CODENAME, built[0])
+    assert publish.add_packages(repo, built)
+    assert not publish.add_packages(repo, built)
+    out = publish.reprepro(repo, "list", publish.CODENAME, publish.PACKAGE).stdout
+    assert "amd64" in out
+    assert "arm64" in out
+
+
+def test_verification_without_a_pinned_fingerprint_is_refused(served, monkeypatch, tmp_path):
+    import sys
+    import urllib.error
+
+    site, _, fpr, release_id = served
+    with pytest.raises(ScriptError, match="40-hex"):
+        publish.verify_site(site)
+    with pytest.raises(ScriptError, match="40-hex"):
+        publish.verify_url("https://example.invalid", release_id=release_id)
+    # a first release (404) must not skip the pin either
+    monkeypatch.setattr(
+        publish.urllib.request,
+        "urlopen",
+        lambda url, timeout: (_ for _ in ()).throw(urllib.error.HTTPError(url, 404, "x", {}, None)),
+    )
+    with pytest.raises(ScriptError, match="40-hex"):
+        publish.fetch_public_state("https://example.invalid", tmp_path, "")
+    monkeypatch.setattr(sys, "argv", ["publish.py", "verify-site", str(site)])
+    with pytest.raises(SystemExit):
+        publish.main()
+
+
+def test_workflows_pin_the_signer_for_every_verification():
+    from common import repo_root
+
+    for name in ("build.yml", "security.yml"):
+        text = (repo_root() / ".github/workflows" / name).read_text(encoding="utf-8")
+        for call in re.findall(
+            r"(?:verify-site|verify-url|fetch-public|scan-published)\b[^\n]*", text
+        ):
+            assert "--fingerprint" in call, call
+
+
+def test_each_architecture_ships_its_own_checksum_file():
+    from common import repo_root
+
+    text = (repo_root() / ".github/workflows/build.yml").read_text(encoding="utf-8")
+    written = re.findall(r"sha256sum \./\*\.deb > \"?(\S+?)\"?\s*$", text, re.MULTILINE)
+    assert written
+    assert all("ARCH" in name for name in written), written
+    checked = re.findall(r"sha256sum -c \"?(\S+?)\"?\)", text)
+    assert checked
+    assert all("arch" in name for name in checked), checked
+
+
+def test_published_package_scan_verifies_the_signed_manifest(served, monkeypatch, tmp_path):
+    import trivy_gate
+
+    site, _, fpr, _ = served
+    monkeypatch.setattr(
+        publish, "_download_once", lambda url, dest: dest.write_bytes(_site_file(site, url))
+    )
+    deb = trivy_gate.fetch_published("https://example.invalid", "amd64", tmp_path, fpr)
+    assert deb.name.endswith("_amd64.deb")
+    manifest = site / "release-manifest.json"
+    manifest.write_text(manifest.read_text().replace("amd64.deb", "amd64.dev"))
+    with pytest.raises(ScriptError):
+        trivy_gate.fetch_published("https://example.invalid", "amd64", tmp_path, fpr)
+    manifest.write_text(manifest.read_text().replace("amd64.dev", "amd64.deb"))
+    with pytest.raises(ScriptError, match="expected|unexpected|signed"):
+        trivy_gate.fetch_published("https://example.invalid", "amd64", tmp_path, "A" * 40)
+
+
+def _site_file(site, url):
+    return (site / url.removeprefix("https://example.invalid/")).read_bytes()
