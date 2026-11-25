@@ -1,0 +1,93 @@
+name: ci
+run-name: ci (${{ github.event_name }})
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ACTIONLINT_VERSION: v1.7.12
+
+jobs:
+  python:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y reprepro
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install -e ".[dev]"
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+      - run: ruff check .
+      - run: ruff format --check .
+      - name: Plugin list
+        run: python3 scripts/plugins.py validate
+      - run: pytest -q
+
+  shell-and-workflows:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: shellcheck -s sh packaging/postinst packaging/prerm packaging/postrm
+      - run: python3 scripts/toolchain.py >> "$GITHUB_ENV"
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - run: go install "github.com/rhysd/actionlint/cmd/actionlint@${ACTIONLINT_VERSION}"
+      - run: actionlint -config-file .github/actionlint.yaml
+
+  probe-build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-26.04
+          - arch: arm64
+            runner: ubuntu-26.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: python3 scripts/toolchain.py >> "$GITHUB_ENV"
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - run: go install "github.com/caddyserver/xcaddy/cmd/xcaddy@${XCADDY_VERSION}"
+      - name: Build, package and test install/upgrade with a throwaway key
+        env:
+          ARCH: ${{ matrix.arch }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y reprepro
+          version=$(python3 scripts/check_version.py latest | tail -n 1)
+          python3 scripts/build.py --caddy-version "$version" --arch "$ARCH" --out build
+          python3 scripts/package.py build --version "${version}+custom.1" --arch "$ARCH" \
+            --binary build/caddy --manifest build/build-manifest.json --out dist
+          python3 scripts/package.py build --version "${version}+custom.0" --arch "$ARCH" \
+            --binary build/caddy --manifest build/build-manifest.json --out baseline
+          sudo env "PATH=$PATH" python3 scripts/test.py apt \
+            --old-deb "baseline/caddy-custom_${version}+custom.0_${ARCH}.deb" \
+            --new-deb "dist/caddy-custom_${version}+custom.1_${ARCH}.deb" \
+            --allow-host-changes --check-binary

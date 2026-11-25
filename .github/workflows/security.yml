@@ -1,0 +1,47 @@
+name: security
+run-name: weekly rescan of the published packages
+
+on:
+  schedule:
+    - cron: "30 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rescan:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-26.04
+          - arch: arm64
+            runner: ubuntu-26.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: python3 scripts/toolchain.py >> "$GITHUB_ENV"
+      - uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+      - name: Scan the published package bytes (checked against the release manifest)
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          mkdir reports
+          python3 scripts/trivy_gate.py scan-published --arch "$ARCH" --report "reports/trivy-${ARCH}-published.json"
+      - name: Gate
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: python3 scripts/trivy_gate.py evaluate "reports/trivy-${ARCH}-published.json" --summary "reports/summary-${ARCH}.md"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: rescan-${{ matrix.arch }}
+          path: reports/
+          retention-days: 30

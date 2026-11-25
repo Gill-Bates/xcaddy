@@ -1,0 +1,25 @@
+name: persist-state
+description: Commit repo-state and push it to apt-repo (fast-forward only, never forced)
+inputs:
+  token:
+    description: Token with contents write access
+    required: true
+  message:
+    description: Commit message
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        REPO: ${{ github.repository }}
+        GH_TOKEN: ${{ inputs.token }}
+        MESSAGE: ${{ inputs.message }}
+      run: |
+        cd repo-state
+        git add -A
+        if git diff --cached --quiet; then echo "nothing to persist"; exit 0; fi
+        git -c user.name=github-actions[bot] -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
+          commit --quiet -m "$MESSAGE"
+        auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+        git -c "http.extraheader=$auth" push "https://github.com/${REPO}.git" HEAD:refs/heads/apt-repo

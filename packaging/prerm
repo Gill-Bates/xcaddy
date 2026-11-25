@@ -1,0 +1,12 @@
+#!/bin/sh
+# Stop the service on removal; configuration and data stay.
+set -e
+
+case "$1" in
+remove | deconfigure)
+    if [ -d /run/systemd/system ]; then
+        deb-systemd-invoke stop caddy-custom.service || true
+    fi
+    ;;
+esac
+exit 0

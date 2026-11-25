@@ -1,0 +1,36 @@
+#!/bin/sh
+# Mirrors dh_installsystemd: enable state is preserved, a stopped service stays stopped,
+# and an upgrade restarts only after the configuration validates.
+set -e
+
+case "$1" in
+configure)
+    if ! getent passwd caddy-custom >/dev/null; then
+        adduser --system --group --home /var/lib/caddy-custom --no-create-home \
+            --gecos "Caddy custom web server" caddy-custom
+    fi
+    install -d -o caddy-custom -g caddy-custom -m 0750 /var/lib/caddy-custom
+    if [ -d /run/systemd/system ]; then
+        systemctl daemon-reload || true
+        if deb-systemd-helper debian-installed caddy-custom.service; then
+            deb-systemd-helper unmask caddy-custom.service >/dev/null || true
+            if deb-systemd-helper --quiet was-enabled caddy-custom.service; then
+                deb-systemd-helper enable caddy-custom.service >/dev/null || true
+            else
+                deb-systemd-helper update-state caddy-custom.service >/dev/null || true
+            fi
+        fi
+        if /usr/bin/caddy-custom validate --config /etc/caddy-custom/Caddyfile >/dev/null 2>&1; then
+            if [ -z "$2" ]; then
+                deb-systemd-invoke start caddy-custom.service ||
+                    echo "caddy-custom: not started (ports in use?); enabled for the next boot" >&2
+            else
+                deb-systemd-invoke try-restart caddy-custom.service || true
+            fi
+        else
+            echo "caddy-custom: configuration invalid; the running service was left untouched" >&2
+        fi
+    fi
+    ;;
+esac
+exit 0

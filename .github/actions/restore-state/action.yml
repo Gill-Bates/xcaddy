@@ -1,0 +1,36 @@
+name: restore-state
+description: Clone the apt-repo branch into repo-state (or start an empty first release) and install reprepro
+inputs:
+  token:
+    description: Token with contents access
+    required: true
+  install-reprepro:
+    description: Install reprepro (needed only where packages are added)
+    required: false
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        REPO: ${{ github.repository }}
+        GH_TOKEN: ${{ inputs.token }}
+        INSTALL_REPREPRO: ${{ inputs.install-reprepro }}
+      run: |
+        if [ "$INSTALL_REPREPRO" = "true" ]; then
+          sudo apt-get update
+          sudo apt-get install -y reprepro
+        fi
+        auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+        echo "::add-mask::${auth#AUTHORIZATION: basic }"
+        rc=0
+        git ls-remote --exit-code --heads "https://github.com/${REPO}.git" apt-repo >/dev/null 2>&1 || rc=$?
+        if [ "$rc" -eq 0 ]; then
+          git -c "http.extraheader=$auth" clone --quiet --branch apt-repo "https://github.com/${REPO}.git" repo-state
+        elif [ "$rc" -eq 2 ]; then
+          echo "No apt-repo branch yet: starting the first release"
+          git init --quiet --initial-branch apt-repo repo-state
+        else
+          echo "ERROR: cannot query the apt-repo branch (git exit $rc)" >&2
+          exit 1
+        fi

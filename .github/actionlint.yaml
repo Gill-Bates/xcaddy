@@ -1,0 +1,6 @@
+# Older actionlint releases do not know the Ubuntu 26.04 GitHub-hosted labels.
+# Drop the entries once the pinned actionlint knows them.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04
+    - ubuntu-26.04-arm

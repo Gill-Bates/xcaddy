@@ -1,0 +1,69 @@
+{
+    "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+    "extends": [
+        "config:best-practices",
+        "helpers:pinGitHubActionDigests"
+    ],
+    "timezone": "Europe/Berlin",
+    "schedule": [
+        "before 6am on Monday"
+    ],
+    "labels": [
+        "dependencies"
+    ],
+    "commitMessagePrefix": "chore(deps):",
+    "prConcurrentLimit": 3,
+    "packageRules": [
+        {
+            "description": "GitHub Actions: auto-merge minor and patch, pinned by digest",
+            "matchManagers": ["github-actions"],
+            "matchUpdateTypes": ["minor", "patch", "digest", "pin"],
+            "automerge": true,
+            "automergeType": "pr",
+            "minimumReleaseAge": "3 days"
+        },
+        {
+            "description": "GitHub Actions: major updates need review",
+            "matchManagers": ["github-actions"],
+            "matchUpdateTypes": ["major"],
+            "automerge": false,
+            "labels": ["dependencies", "breaking-change"]
+        },
+        {
+            "description": "Plugin pins in config/plugins.txt are reviewed because they change the shipped binary",
+            "matchFileNames": ["config/plugins.txt"],
+            "automerge": false,
+            "labels": ["dependencies", "plugin"]
+        }
+    ],
+    "customManagers": [
+        {
+            "customType": "regex",
+            "description": "Toolchain constants with a renovate comment in scripts/toolchain.py",
+            "managerFilePatterns": ["/^scripts/toolchain\\.py$/"],
+            "matchStrings": [
+                "[A-Z_]+ = \"(?<currentValue>[^\"]+)\"  # renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>[^\\s]+)"
+            ]
+        },
+        {
+            "customType": "regex",
+            "description": "Pinned plugin versions in config/plugins.txt",
+            "managerFilePatterns": ["/^config/plugins\\.txt$/"],
+            "matchStrings": [
+                "^(?<depName>github\\.com/[^/@\\s]+/[^/@\\s]+)@(?<currentValue>v[0-9][^\\s#]*)"
+            ],
+            "datasourceTemplate": "go",
+            "versioningTemplate": "semver"
+        },
+        {
+            "customType": "regex",
+            "description": "actionlint version pinned in ci.yml",
+            "managerFilePatterns": ["/^\\.github/workflows/ci\\.yml$/"],
+            "matchStrings": [
+                "ACTIONLINT_VERSION: (?<currentValue>v[0-9.]+)"
+            ],
+            "depNameTemplate": "rhysd/actionlint",
+            "datasourceTemplate": "github-releases"
+        }
+    ]
+}

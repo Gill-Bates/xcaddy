@@ -221,3 +221,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local agent session state
+.agents/
+__pycache__/
+.pytest_cache/
+.ruff_cache/

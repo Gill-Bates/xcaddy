@@ -1,0 +1,24 @@
+[Unit]
+Description=Caddy web server (custom build)
+Documentation=https://caddyserver.com/docs/
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+User=caddy-custom
+Group=caddy-custom
+Environment=XDG_DATA_HOME=/var/lib/caddy-custom XDG_CONFIG_HOME=/var/lib/caddy-custom/config
+ExecStart=/usr/bin/caddy-custom run --environ --config /etc/caddy-custom/Caddyfile
+ExecReload=/usr/bin/caddy-custom reload --config /etc/caddy-custom/Caddyfile --force
+TimeoutStopSec=5s
+LimitNOFILE=1048576
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/caddy-custom
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,39 @@
+# Single source of truth for the project version and the development dependencies.
+# The scripts in scripts/ are not a package; the project is installed only for its dev extra.
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "xcaddy-builder"
+version = "1.0.0"
+description = "Build, package and publish scripts for the caddy-custom APT repository"
+readme = "README.md"
+requires-python = ">=3.14"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Gill Bates" }]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.2.0",
+    "ruff==0.17.6",
+]
+
+[tool.setuptools]
+packages = []
+
+[tool.ruff]
+# Keep the local and CI checks on the same Ruff version and Python target.
+required-version = "==0.17.6"
+line-length = 100
+target-version = "py314"
+src = ["scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["scripts"]

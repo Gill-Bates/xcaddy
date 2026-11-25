@@ -1,0 +1,19 @@
+#!/bin/sh
+# Remove state and account only on purge; plain removal keeps configuration and data.
+set -e
+
+case "$1" in
+remove | purge)
+    if [ -d /run/systemd/system ]; then systemctl daemon-reload || true; fi
+    if [ "$1" = purge ]; then deb-systemd-helper purge caddy-custom.service >/dev/null || true; deb-systemd-helper unmask caddy-custom.service >/dev/null || true; fi
+    ;;
+esac
+if [ "$1" = purge ]; then
+    # one-file-system and no symlink following keep the purge inside the package directories
+    for d in /var/lib/caddy-custom /etc/caddy-custom; do
+        if [ -L "$d" ]; then rm -f "$d"; elif [ -d "$d" ]; then rm -rf --one-file-system "$d"; fi
+    done
+    if getent passwd caddy-custom >/dev/null; then deluser --system caddy-custom || true; fi
+    if getent group caddy-custom >/dev/null; then delgroup --system caddy-custom || true; fi
+fi
+exit 0

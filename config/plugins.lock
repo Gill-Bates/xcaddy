@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "plugins": [
+    {
+      "module": "github.com/caddy-dns/cloudflare",
+      "requested": "github.com/caddy-dns/cloudflare",
+      "version": "v0.2.4",
+      "sum": "h1:h51SY6+JeevBcPtQ6xZxGRakYzbGiOXeJCFowQj/bGg=",
+      "go_mod_sum": "h1:Rge8GoKEa65RIUd1GQ9DmOmnjD9FMztz5yiaKvf351E=",
+      "module_ids": [
+        "dns.providers.cloudflare"
+      ],
+      "module_ids_any": [
+        "dns.providers.cloudflare"
+      ]
+    },
+    {
+      "module": "github.com/hslatman/caddy-crowdsec-bouncer",
+      "requested": "github.com/hslatman/caddy-crowdsec-bouncer",
+      "version": "v0.15.0",
+      "sum": "h1:jjYR1YpbI/FOFOdQEF+EfeubI0VZIg7dbd9gfVgAGAQ=",
+      "go_mod_sum": "h1:g+bQYq1OoKHBj5Bk0iP+8P8c4+03NH2py7SgoMmtY9M=",
+      "module_ids": [],
+      "module_ids_any": [
+        "admin.api.crowdsec",
+        "crowdsec",
+        "http.handlers.appsec",
+        "http.handlers.crowdsec",
+        "layer4.matchers.crowdsec"
+      ]
+    },
+    {
+      "module": "github.com/mholt/caddy-ratelimit",
+      "requested": "github.com/mholt/caddy-ratelimit",
+      "version": "v0.1.0",
+      "sum": "h1:73lOvdSLSoBGPT5l61nrTzh9liax+IDfXeQDtfzNcZ4=",
+      "go_mod_sum": "h1:smAiS3nAflvLDTiGNKUlPXG47Ke3bAiexcWWipVzvMY=",
+      "module_ids": [
+        "http.handlers.rate_limit"
+      ],
+      "module_ids_any": [
+        "http.handlers.rate_limit"
+      ]
+    }
+  ]
+}
