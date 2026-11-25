@@ -141,7 +141,9 @@ def reprepro(repo: Path, *args: str, check: bool = True):
 def init_repo(repo: Path, fingerprint: str) -> None:
     template = (repo_root() / "apt/conf/distributions").read_text(encoding="utf-8")
     (repo / "conf").mkdir(parents=True, exist_ok=True)
-    (repo / "conf/distributions").write_text(template.replace("@SIGN_WITH@", fingerprint), encoding="utf-8")
+    (repo / "conf/distributions").write_text(
+        template.replace("@SIGN_WITH@", fingerprint), encoding="utf-8"
+    )
 
 
 def list_versions(repo: Path) -> list[str]:
@@ -536,7 +538,15 @@ def verify_site(
         if out.stdout != release:
             raise ScriptError("InRelease and Release contain different metadata")
         detached = run(
-            ["gpg", "--batch", "--status-fd", "1", "--verify", dist / "Release.gpg", dist / "Release"],
+            [
+                "gpg",
+                "--batch",
+                "--status-fd",
+                "1",
+                "--verify",
+                dist / "Release.gpg",
+                dist / "Release",
+            ],
             env=env,
         )
         detached_signers = [

@@ -75,12 +75,12 @@ def test_purge_removes_a_symlinked_package_directory_without_following_it(tmp_pa
     assert (outside / "keep.txt").read_text() == "precious"
 
 
-def test_a_failing_removal_does_not_abort_the_purge(tmp_path):
+def test_a_failing_removal_keeps_the_service_account(tmp_path):
     data, conf = tmp_path / "lib", tmp_path / "etc"
     data.mkdir()
     conf.mkdir()
     patched = _patched_postrm(tmp_path, data, conf)
-    # rm fails like on a mount point inside the data directory; the account step must still run
+    # A failed removal must not orphan remaining files under a deleted service UID.
     calls = tmp_path / "calls.log"
     stubs = _stub_bin(
         tmp_path,
@@ -95,7 +95,32 @@ def test_a_failing_removal_does_not_abort_the_purge(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     assert "could not remove" in result.stderr
-    assert len(calls.read_text().splitlines()) == 2
+    assert not calls.exists()
+
+
+def test_purge_does_not_enter_a_mounted_package_directory(tmp_path):
+    data, conf = tmp_path / "lib", tmp_path / "etc"
+    data.mkdir()
+    conf.mkdir()
+    (data / "cert.pem").write_text("tls identity")
+    patched = _patched_postrm(tmp_path, data, conf)
+    calls = tmp_path / "calls.log"
+    stubs = _stub_bin(
+        tmp_path,
+        mountpoint="exit 0",
+        rm=f'echo rm >> "{calls}"',
+        getent="exit 0",
+        deluser=f'echo deluser >> "{calls}"',
+        delgroup=f'echo delgroup >> "{calls}"',
+    )
+    env = {**os.environ, "PATH": f"{stubs}:{os.environ['PATH']}"}
+    result = subprocess.run(
+        [shutil.which("sh"), str(patched), "purge"], capture_output=True, text=True, env=env
+    )
+    assert result.returncode == 0, result.stderr
+    assert "is a mount point" in result.stderr
+    assert (data / "cert.pem").read_text() == "tls identity"
+    assert not calls.exists()
 
 
 def test_remove_keeps_configuration_and_data(tmp_path):

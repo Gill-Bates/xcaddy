@@ -10,12 +10,23 @@ remove | purge)
 esac
 if [ "$1" = purge ]; then
     # one-file-system and no symlink following keep the purge inside the package directories
+    cleanup_complete=1
     for d in /var/lib/caddy-custom /etc/caddy-custom; do
-        if [ -L "$d" ]; then rm -f "$d"; elif [ -d "$d" ]; then
-            rm -rf --one-file-system "$d" || echo "caddy-custom: could not remove all of $d (mount point inside?)" >&2
+        if [ -L "$d" ]; then
+            if ! rm -f "$d"; then cleanup_complete=0; fi
+        elif [ -d "$d" ]; then
+            if mountpoint -q "$d"; then
+                echo "caddy-custom: $d is a mount point; leaving its data and service account" >&2
+                cleanup_complete=0
+            elif ! rm -rf --one-file-system "$d"; then
+                echo "caddy-custom: could not remove all of $d (mount point inside?)" >&2
+                cleanup_complete=0
+            fi
         fi
     done
-    if getent passwd caddy-custom >/dev/null; then deluser --system caddy-custom || true; fi
-    if getent group caddy-custom >/dev/null; then delgroup --system caddy-custom || true; fi
+    if [ "$cleanup_complete" -eq 1 ]; then
+        if getent passwd caddy-custom >/dev/null; then deluser --system caddy-custom || true; fi
+        if getent group caddy-custom >/dev/null; then delgroup --system caddy-custom || true; fi
+    fi
 fi
 exit 0

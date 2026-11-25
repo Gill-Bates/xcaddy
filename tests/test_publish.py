@@ -70,6 +70,33 @@ def test_tampered_metadata_fails_verification(env):
         publish.verify_site(site, fingerprint=fpr)
 
 
+def test_inrelease_must_match_the_signed_release(env):
+    repo, fpr, debs, tmp = env
+    publish_version(repo, fpr, debs, "2.11.9+custom.1", 1)
+    site = tmp / "site"
+    publish.export_site(repo, site)
+    release = site / "dists/stable/Release"
+    release.write_text(
+        release.read_text(encoding="utf-8") + "X-Review: changed\n", encoding="utf-8"
+    )
+    publish._detached(release, release.with_name("Release.gpg"), fpr)
+    with pytest.raises(ScriptError, match="different metadata"):
+        publish.verify_site(site, fingerprint=fpr)
+
+
+def test_init_updates_an_existing_repository_configuration(tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    distribution = source / "apt/conf/distributions"
+    distribution.parent.mkdir(parents=True)
+    distribution.write_text("SignWith: @SIGN_WITH@\n", encoding="utf-8")
+    monkeypatch.setattr(publish, "repo_root", lambda: source)
+    repo = tmp_path / "repo"
+    publish.init_repo(repo, "A" * 40)
+    distribution.write_text("SignWith: @SIGN_WITH@\nDescription: updated\n", encoding="utf-8")
+    publish.init_repo(repo, "A" * 40)
+    assert "Description: updated" in (repo / "conf/distributions").read_text(encoding="utf-8")
+
+
 def test_downgrade_and_missing_arch_are_refused(env):
     repo, fpr, debs, _ = env
     publish_version(repo, fpr, debs, "2.11.9+custom.2", 2)

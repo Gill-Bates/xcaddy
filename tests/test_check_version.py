@@ -5,6 +5,7 @@
 #
 
 import re
+import shutil
 
 import pytest
 
@@ -83,6 +84,15 @@ def test_inputs_hash_is_stable_sha256():
     first = inputs_hash(repo_root())
     assert len(first) == 64
     assert inputs_hash(repo_root()) == first
+
+
+def test_apt_configuration_changes_the_build_input_hash(tmp_path):
+    for directory in ("scripts", "packaging", "config", "apt"):
+        shutil.copytree(repo_root() / directory, tmp_path / directory)
+    before = inputs_hash(tmp_path)
+    distribution = tmp_path / "apt/conf/distributions"
+    distribution.write_text(distribution.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    assert inputs_hash(tmp_path) != before
 
 
 @pytest.mark.parametrize(
