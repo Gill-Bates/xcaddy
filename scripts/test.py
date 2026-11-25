@@ -51,7 +51,7 @@ def check_installed(version: str, check_binary: bool) -> None:
         log("info", "ok: caddy-custom validates the default Caddyfile")
     if systemd_running():
         enabled = run(["systemctl", "is-enabled", NAME], check=False).stdout.strip()
-        expect(enabled == "enabled", "service is enabled")
+        expect(enabled == "enabled", f"service is enabled (systemctl is-enabled: {enabled!r})")
 
 
 def apt_flow(old_deb: Path, new_deb: Path, check_binary: bool) -> None:

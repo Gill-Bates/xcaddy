@@ -241,6 +241,44 @@ def test_verify_url_rejects_a_missing_by_hash_file(served):
         publish.verify_url("https://example.invalid", fingerprint=fpr, release_id=release_id)
 
 
+ARCH_RELEASE = "dists/stable/main/binary-amd64/Release"
+
+
+def _by_hash_of(site, name):
+    import hashlib
+
+    file = site / name
+    return file.parent / "by-hash" / "SHA256" / hashlib.sha256(file.read_bytes()).hexdigest()
+
+
+def test_verify_site_rejects_a_tampered_arch_release(served):
+    site, _, fpr, _ = served
+    (site / ARCH_RELEASE).write_text("tampered")
+    with pytest.raises(ScriptError, match="does not match the signed Release"):
+        publish.verify_site(site, fingerprint=fpr)
+
+
+def test_verify_site_rejects_a_missing_arch_release_by_hash_file(served):
+    site, _, fpr, _ = served
+    _by_hash_of(site, ARCH_RELEASE).unlink()
+    with pytest.raises(ScriptError, match="by-hash file"):
+        publish.verify_site(site, fingerprint=fpr)
+
+
+def test_verify_url_rejects_a_tampered_arch_release(served):
+    site, _, fpr, release_id = served
+    (site / ARCH_RELEASE).write_text("tampered")
+    with pytest.raises(ScriptError, match="does not match the signed Release"):
+        publish.verify_url("https://example.invalid", fingerprint=fpr, release_id=release_id)
+
+
+def test_verify_url_rejects_a_missing_arch_release_by_hash_file(served):
+    site, _, fpr, release_id = served
+    _by_hash_of(site, ARCH_RELEASE).unlink()
+    with pytest.raises(ScriptError, match="404"):
+        publish.verify_url("https://example.invalid", fingerprint=fpr, release_id=release_id)
+
+
 def test_verify_site_pins_the_signer(served):
     site, _, _, _ = served
     with pytest.raises(ScriptError, match="expected key"):

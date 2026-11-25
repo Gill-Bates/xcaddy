@@ -10,16 +10,15 @@ configure)
             --gecos "Caddy custom web server" caddy-custom
     fi
     install -d -o caddy-custom -g caddy-custom -m 0750 /var/lib/caddy-custom
+    # was-enabled is true without a state file, so a first install enables; an upgrade keeps a disabled unit disabled.
+    deb-systemd-helper unmask caddy-custom.service >/dev/null || true
+    if deb-systemd-helper --quiet was-enabled caddy-custom.service; then
+        deb-systemd-helper enable caddy-custom.service >/dev/null || true
+    else
+        deb-systemd-helper update-state caddy-custom.service >/dev/null || true
+    fi
     if [ -d /run/systemd/system ]; then
         systemctl daemon-reload || true
-        if deb-systemd-helper debian-installed caddy-custom.service; then
-            deb-systemd-helper unmask caddy-custom.service >/dev/null || true
-            if deb-systemd-helper --quiet was-enabled caddy-custom.service; then
-                deb-systemd-helper enable caddy-custom.service >/dev/null || true
-            else
-                deb-systemd-helper update-state caddy-custom.service >/dev/null || true
-            fi
-        fi
         if /usr/bin/caddy-custom validate --config /etc/caddy-custom/Caddyfile >/dev/null 2>&1; then
             if [ -z "$2" ]; then
                 deb-systemd-invoke start caddy-custom.service ||

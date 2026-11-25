@@ -185,13 +185,74 @@ def add_packages(repo: Path, debs: list[Path], archs: tuple[str, ...] = ARCHS) -
         raise ScriptError(f"unexpected package version {version!r}")
     existing = list_versions(repo) if (repo / "db").exists() else []
     if version in existing:
-        log("info", f"{version} is already published; nothing to add")
-        return False
-    if existing and not dpkg_compare(version, "gt", existing[-1]):
+        missing = _verify_published_identity(repo, version, by_arch)
+        if not missing:
+            log("info", f"{version} is already published with identical packages; nothing to add")
+            return False
+        by_arch = {arch: by_arch[arch] for arch in missing}
+    elif existing and not dpkg_compare(version, "gt", existing[-1]):
         raise ScriptError(f"{version} is not newer than published {existing[-1]}; refusing")
+    retain_packages(repo)
     for deb in by_arch.values():
         reprepro(repo, "includedeb", CODENAME, deb)
     return True
+
+
+def _published_packages(repo: Path, arch: str) -> dict[str, tuple[str, str]]:
+    """Version -> (Filename, SHA256) of caddy-custom in the repository's Packages index."""
+    path = repo / "dists" / CODENAME / "main" / f"binary-{arch}" / "Packages"
+    if not path.is_file():
+        return {}
+    found: dict[str, tuple[str, str]] = {}
+    for stanza in path.read_text(encoding="utf-8").split("\n\n"):
+        fields = dict(
+            line.split(": ", 1) for line in stanza.splitlines() if line[:1].strip() and ": " in line
+        )
+        if fields.get("Package") == PACKAGE and "Version" in fields:
+            found[fields["Version"]] = (fields.get("Filename", ""), fields.get("SHA256", ""))
+    return found
+
+
+def _verify_published_identity(repo: Path, version: str, by_arch: dict[str, Path]) -> list[str]:
+    """Return the architectures still missing for version; refuse differing package bytes."""
+    missing = []
+    for arch, deb in by_arch.items():
+        entry = _published_packages(repo, arch).get(version)
+        if entry is None:
+            missing.append(arch)
+        elif entry[1] != sha256_file(deb):
+            raise ScriptError(
+                f"{version} ({arch}) is published with different package bytes; "
+                "a changed package needs a new revision"
+            )
+    return missing
+
+
+def retain_packages(repo: Path) -> None:
+    """Copy published .deb files aside; reprepro drops them, but cached old indexes name them."""
+    for deb in (repo / "pool").glob(f"**/{PACKAGE}_*.deb"):
+        target = repo / RETAINED_DIR / deb.relative_to(repo)
+        if not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(deb, target)
+
+
+RETAINED_DIR = "retained"
+FILENAME_RE = re.compile(r"^Filename: (\S+)$", re.MULTILINE)
+
+
+def prune_retained(repo: Path, dist: Path) -> None:
+    """Keep a retained .deb only while a still-served by-hash Packages index names it."""
+    referenced: set[str] = set()
+    for path in dist.glob("main/binary-*/by-hash/SHA256/*"):
+        data = path.read_bytes()
+        if data[:2] == b"\x1f\x8b":
+            data = gzip.decompress(data)
+        referenced.update(FILENAME_RE.findall(data.decode("utf-8", errors="ignore")))
+    root = repo / RETAINED_DIR
+    for deb in root.glob("**/*.deb"):
+        if deb.relative_to(root).as_posix() not in referenced:
+            deb.unlink()
 
 
 def _gpg_env() -> dict[str, str]:
@@ -222,6 +283,7 @@ def add_by_hash(repo: Path, fingerprint: str, now: float | None = None) -> None:
         )
         release.write_text(text, encoding="utf-8")
     prune_by_hash(dist, text, now)
+    prune_retained(repo, dist)
     _sign(release, dist / "InRelease", dist / "Release.gpg", fingerprint)
 
 
@@ -314,11 +376,18 @@ def _detached(source: Path, target: Path, fingerprint: str) -> None:
     )
 
 
+def require_fingerprint(value: str) -> str:
+    """Return the normalized pin; a public key never vouches for itself, so a pin is mandatory."""
+    value = value.replace(" ", "").upper()
+    if not re.fullmatch(r"[0-9A-F]{40}", value):
+        raise ScriptError("a full 40-hex signer fingerprint (APT_GPG_KEY_ID) is required")
+    return value
+
+
 def verify_state(directory: Path, fingerprint: str) -> None:
     """Verify manifest and status signatures; the pinned primary fingerprint must be the signer."""
     require_tools("gpg")
-    if not re.fullmatch(r"[0-9A-Fa-f]{40}", fingerprint.replace(" ", "")):
-        raise ScriptError("a full 40-hex signer fingerprint is required")
+    fingerprint = require_fingerprint(fingerprint)
     with tempfile.TemporaryDirectory(prefix="verify-state-") as tmp:
         os.chmod(tmp, 0o700)
         env = {**os.environ, "GNUPGHOME": tmp}
@@ -339,7 +408,7 @@ def verify_state(directory: Path, fingerprint: str) -> None:
             signers = [ln.split()[-1] for ln in out.splitlines() if " VALIDSIG " in ln]
             if not signers:
                 raise ScriptError(f"{name}: no valid signature")
-            if signers[0].upper() != fingerprint.replace(" ", "").upper():
+            if signers[0].upper() != fingerprint:
                 raise ScriptError(f"{name} is signed by an unexpected key")
 
 
@@ -375,6 +444,9 @@ def export_site(repo: Path, out: Path) -> None:
         else:
             out.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(src, out / name)
+    retained = repo / RETAINED_DIR
+    if retained.is_dir():
+        shutil.copytree(retained, out, dirs_exist_ok=True)
     (out / ".nojekyll").write_text("", encoding="utf-8")
     (out / "index.html").write_text(
         "<!doctype html><title>xcaddy APT repository</title>"
@@ -395,6 +467,20 @@ def _release_hashes(release: str) -> dict[str, str]:
             digest, _size, name = line.split()
             hashes[name] = digest
     return hashes
+
+
+def _release_sizes(release: str) -> dict[str, int]:
+    sizes: dict[str, int] = {}
+    in_sha = False
+    for line in release.splitlines():
+        if line.startswith("SHA256:"):
+            in_sha = True
+        elif not line.startswith(" "):
+            in_sha = False
+        elif in_sha:
+            _digest, size, name = line.split()
+            sizes[name] = int(size)
+    return sizes
 
 
 STATE_FILES = (
@@ -434,10 +520,11 @@ def verify_site(
 ) -> None:
     """Check signatures, every index and by-hash file against Release, and package bytes.
 
-    With a fingerprint the signer must be that primary key; with a release_id the manifest
-    and the status file must describe exactly that release.
+    The signer must be the pinned primary key; with a release_id the manifest and the status
+    file must describe exactly that release.
     """
     require_tools("gpg")
+    fingerprint = require_fingerprint(fingerprint)
     dist = site / "dists" / CODENAME
     with tempfile.TemporaryDirectory(prefix="verify-gnupg-") as tmp:
         os.chmod(tmp, 0o700)
@@ -445,28 +532,32 @@ def verify_site(
         run(["gpg", "--batch", "--import", site / "gpg.key"], env=env)
         out = run(["gpg", "--batch", "--status-fd", "1", "--verify", dist / "InRelease"], env=env)
         signers = [ln.split()[-1] for ln in out.stdout.splitlines() if " VALIDSIG " in ln]
-        if fingerprint and (not signers or signers[0].upper() != fingerprint.upper()):
+        if not signers or signers[0].upper() != fingerprint:
             raise ScriptError("InRelease is not signed by the expected key")
         run(["gpg", "--batch", "--verify", dist / "Release.gpg", dist / "Release"], env=env)
     manifest = _verify_state_files(site, fingerprint, release_id)
     release = (dist / "Release").read_text(encoding="utf-8")
     by_hash_enabled = "Acquire-By-Hash: yes" in release
     hashes = _release_hashes(release)
+    sizes = _release_sizes(release)
+    for name, digest in hashes.items():
+        file = dist / _safe_rel(name)
+        if (
+            not file.is_file()
+            or file.stat().st_size != sizes[name]
+            or hashlib.sha256(file.read_bytes()).hexdigest() != digest
+        ):
+            raise ScriptError(f"{name} is missing or does not match the signed Release file")
+        by_hash = file.parent / "by-hash" / "SHA256" / digest
+        if by_hash_enabled and (not by_hash.is_file() or sha256_file(by_hash) != digest):
+            raise ScriptError(f"by-hash file for {name} is missing or damaged")
     published: dict[str, str] = {}
     for arch in archs:
         rel = f"main/binary-{arch}/Packages"
         path = dist / rel
-        if not path.is_file() or f"Package: {PACKAGE}" not in path.read_text(encoding="utf-8"):
-            raise ScriptError(f"{rel} is missing or lists no {PACKAGE}")
+        if f"Package: {PACKAGE}" not in path.read_text(encoding="utf-8"):
+            raise ScriptError(f"{rel} lists no {PACKAGE}")
         gz = dist / f"{rel}.gz"
-        for name, file in ((rel, path), (f"{rel}.gz", gz)):
-            if name == rel or file.is_file():
-                digest = hashlib.sha256(file.read_bytes()).hexdigest()
-                if hashes.get(name) != digest:
-                    raise ScriptError(f"{name} does not match the signed Release file")
-                by_hash = dist / Path(name).parent / "by-hash" / "SHA256" / digest
-                if by_hash_enabled and not by_hash.is_file():
-                    raise ScriptError(f"by-hash file for {name} is missing")
         if gz.is_file() and gzip.decompress(gz.read_bytes()) != path.read_bytes():
             raise ScriptError(f"{rel}.gz differs from {rel}")
         for filename, digest in _package_entries(path.read_text(encoding="utf-8")):
@@ -489,15 +580,7 @@ def _verify_state_files(site: Path, fingerprint: str, release_id: str) -> dict |
         return None
     if not all(present):
         raise ScriptError("release manifest and status files are incomplete")
-    if fingerprint:
-        verify_state(site, fingerprint)
-    else:
-        with tempfile.TemporaryDirectory(prefix="verify-gnupg-") as tmp:
-            os.chmod(tmp, 0o700)
-            env = {**os.environ, "GNUPGHOME": tmp}
-            run(["gpg", "--batch", "--import", site / "gpg.key"], env=env)
-            for name in ("release-manifest.json", "release-status.json"):
-                run(["gpg", "--batch", "--verify", site / f"{name}.asc", site / name], env=env)
+    verify_state(site, fingerprint)
     manifest = json.loads((site / "release-manifest.json").read_text(encoding="utf-8"))
     status = json.loads((site / "release-status.json").read_text(encoding="utf-8"))
     if status.get("release_id") != manifest.get("release_id"):
@@ -525,6 +608,7 @@ def verify_url(
     base: str, archs: tuple[str, ...] = ARCHS, fingerprint: str = "", release_id: str = ""
 ) -> None:
     """Fetch everything the signed Release index lists and verify it like a local site."""
+    fingerprint = require_fingerprint(fingerprint)
     base = base.rstrip("/")
     dist = f"dists/{CODENAME}"
     with tempfile.TemporaryDirectory(prefix="verify-url-") as tmp:
@@ -537,14 +621,13 @@ def verify_url(
             fetch(name)
         fetch(f"{dist}/Release.gpg")
         hashes = _release_hashes((root / dist / "Release").read_text(encoding="utf-8"))
+        for name, digest in hashes.items():
+            fetch(f"{dist}/{name}")
+            fetch(f"{dist}/{Path(name).parent}/by-hash/SHA256/{digest}")
         for arch in archs:
             rel = f"main/binary-{arch}/Packages"
-            for name in (rel, f"{rel}.gz"):
-                digest = hashes.get(name, "")
-                if not re.fullmatch(r"[0-9a-f]{64}", digest):
-                    raise ScriptError(f"{name} is not listed in the Release file")
-                fetch(f"{dist}/{name}")
-                fetch(f"{dist}/{Path(name).parent}/by-hash/SHA256/{digest}")
+            if rel not in hashes or f"{rel}.gz" not in hashes:
+                raise ScriptError(f"{rel} is not listed in the Release file")
             index = (root / dist / rel).read_text(encoding="utf-8")
             for filename, _digest in _package_entries(index):
                 fetch(filename)
@@ -554,6 +637,7 @@ def verify_url(
 
 def fetch_public_state(base: str, out: Path, fingerprint: str) -> bool:
     """Download and verify the public manifest and status; False when none is published yet."""
+    fingerprint = require_fingerprint(fingerprint)
     base = base.rstrip("/")
     try:
         _download_once(f"{base}/release-manifest.json", out / "release-manifest.json")
@@ -616,16 +700,16 @@ def main() -> int:
     anc.add_argument("--commit", required=True)
     vs = sub.add_parser("verify-site")
     vs.add_argument("site", type=Path)
-    vs.add_argument("--fingerprint", default="")
+    vs.add_argument("--fingerprint", required=True)
     rid = sub.add_parser("release-id")
     rid.add_argument("--repo-dir", required=True, type=Path)
     fp = sub.add_parser("fetch-public")
     fp.add_argument("url", nargs="?", default=PAGES_URL)
     fp.add_argument("--out", required=True, type=Path)
-    fp.add_argument("--fingerprint", default="")
+    fp.add_argument("--fingerprint", required=True)
     vu = sub.add_parser("verify-url")
     vu.add_argument("url", nargs="?", default=PAGES_URL)
-    vu.add_argument("--fingerprint", default="")
+    vu.add_argument("--fingerprint", required=True)
     vu.add_argument("--expect-release-id", default="")
     ns = parser.parse_args()
 
