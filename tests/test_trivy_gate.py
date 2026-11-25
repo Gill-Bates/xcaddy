@@ -9,7 +9,13 @@ import json
 import pytest
 
 from common import ScriptError
-from trivy_gate import evaluate, require_go_modules
+from trivy_gate import (
+    CONFIG_DIRS,
+    copy_config_inputs,
+    evaluate,
+    require_go_modules,
+    require_misconfigurations,
+)
 
 
 def report(tmp_path, name, results=None, **extra):
@@ -80,3 +86,26 @@ def test_scan_without_go_modules_is_an_error(tmp_path):
         require_go_modules(empty)
     seen = report(tmp_path, "g.json", [{"Type": "gobinary", "Packages": [{"Name": "x"}]}])
     require_go_modules(seen)
+
+
+def test_canary_must_report_a_misconfiguration(tmp_path):
+    with pytest.raises(ScriptError, match="canary"):
+        require_misconfigurations(report(tmp_path, "c.json", [{"Type": "dockerfile"}]))
+    require_misconfigurations(
+        report(tmp_path, "d.json", [{"Misconfigurations": [{"Severity": "HIGH"}]}])
+    )
+
+
+def test_config_scan_refuses_missing_or_empty_inputs(tmp_path):
+    root, dest = tmp_path / "root", tmp_path / "dest"
+    dest.mkdir()
+    for name in CONFIG_DIRS:
+        (root / name).mkdir(parents=True)
+        (root / name / "f").write_text("x")
+    copy_config_inputs(root, dest)
+    assert all((dest / name / "f").is_file() for name in CONFIG_DIRS)
+    (root / "apt" / "f").unlink()
+    dest2 = tmp_path / "dest2"
+    dest2.mkdir()
+    with pytest.raises(ScriptError, match="apt/"):
+        copy_config_inputs(root, dest2)

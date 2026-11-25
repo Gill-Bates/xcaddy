@@ -540,13 +540,15 @@ def _ungated_publishers(workflow):
     def _gated(name):
         job = jobs[name]
         condition = job.get("if")
+        if isinstance(condition, str):
+            condition = re.sub(r"^\$\{\{\s*(.*?)\s*\}\}$", r"\1", condition.strip())
         if _directly_gated(condition):
             return True
         needs = _needs(job)
         if condition is None:
             return bool(needs) and all(gated(n) for n in needs)
         residue = SUCCESS_TERM.sub("", condition)
-        residue = re.sub(r"always\(\)|&&|\|\||[()\s]", "", residue)
+        residue = re.sub(r"always\(\)|!cancelled\(\)|&&|\|\||[()\s]", "", residue)
         deps = SUCCESS_TERM.findall(condition)
         return not residue and bool(deps) and all(n in needs and gated(n) for n in deps)
 

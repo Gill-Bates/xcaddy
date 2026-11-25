@@ -110,6 +110,11 @@ def test_build_info_ignores_everything_but_dependency_lines():
     assert parse_build_info("") == {}
 
 
+def test_build_info_records_replaced_module_versions_and_checksums():
+    text = "dep\tgolang.org/x/net\tv0.61.0\told-sum\n=>\tgolang.org/x/net\tv0.62.0\tnew-sum\n"
+    assert parse_build_info(text) == {"golang.org/x/net": ("v0.62.0", "new-sum")}
+
+
 def test_a_locked_module_without_a_recorded_checksum_fails_the_build():
     deps = parse_build_info("dep\tgithub.com/a/rate\tv0.1.0\n")
     with pytest.raises(ScriptError, match="lock says"):

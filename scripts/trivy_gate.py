@@ -28,6 +28,8 @@ from common import (
 
 SEVERITIES = ("CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN")
 BLOCKING = ("CRITICAL", "HIGH")
+CONFIG_DIRS = ("packaging", "config", "apt", ".github")
+CANARY_DIR = Path("tests") / "fixtures" / "trivy-canary"
 
 
 def load_report(path: Path) -> dict[str, Any]:
@@ -81,6 +83,23 @@ def require_go_modules(report: Path) -> None:
         if result.get("Type") == "gobinary" and result.get("Packages"):
             return
     raise ScriptError(f"{report.name}: no Go modules detected in the binary; scan is not trusted")
+
+
+def require_misconfigurations(report: Path) -> None:
+    """The canary scan must flag the insecure fixture, else the misconfig scanner is blind."""
+    for result in load_report(report).get("Results") or []:
+        if result.get("Misconfigurations"):
+            return
+    raise ScriptError(f"{report.name}: canary produced no misconfiguration; scanner is not trusted")
+
+
+def copy_config_inputs(root: Path, dest: Path) -> None:
+    """Copy the scanned directories; a missing or empty one would make the scan vacuous."""
+    for name in CONFIG_DIRS:
+        src = root / name
+        if not src.is_dir() or not any(p.is_file() for p in src.rglob("*")):
+            raise ScriptError(f"scan input {name}/ is missing or empty; refusing a vacuous scan")
+        run(["cp", "-r", src, dest / name])
 
 
 def fetch_published(url: str, arch: str, dest: Path, fingerprint: str) -> Path:
@@ -157,11 +176,11 @@ def main() -> int:
     elif ns.command == "scan-config":
         root = repo_root()
         with tempfile.TemporaryDirectory(prefix="trivy-config-") as tmp:
-            for name in ("packaging", "config", "apt", ".github"):
-                src = root / name
-                if src.is_dir():
-                    run(["cp", "-r", src, Path(tmp) / name])
+            copy_config_inputs(root, Path(tmp))
             trivy_scan("fs", Path(tmp), ns.report)
+        canary = ns.report.with_name(f"{ns.report.stem}-canary{ns.report.suffix}")
+        trivy_scan("fs", root / CANARY_DIR, canary)
+        require_misconfigurations(canary)
     else:
         passed, text = evaluate(ns.reports)
         print(text)

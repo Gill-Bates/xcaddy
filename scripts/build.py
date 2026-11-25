@@ -75,7 +75,7 @@ def parse_build_info(text: str) -> dict[str, tuple[str, str]]:
     modules: dict[str, tuple[str, str]] = {}
     for line in text.splitlines():
         parts = line.split()
-        if len(parts) >= 3 and parts[0] == "dep":
+        if len(parts) >= 3 and parts[0] in {"=>", "dep"}:
             modules[parts[1]] = (parts[2], parts[3] if len(parts) > 3 else "")
     return modules
 
