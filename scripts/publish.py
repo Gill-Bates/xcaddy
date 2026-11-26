@@ -708,8 +708,9 @@ def verify_site(
             if not deb.is_file() or sha256_file(deb) != digest:
                 raise ScriptError(f"{filename} is missing or differs from the signed Packages")
             published[Path(filename).name] = digest
+    # Older versions stay in the index, so only the manifest's own packages must match.
     if manifest is not None and any(
-        manifest["packages"].get(name) != digest for name, digest in published.items()
+        published.get(name) != digest for name, digest in manifest["packages"].items()
     ):
         raise ScriptError("published packages differ from the signed release manifest")
 
