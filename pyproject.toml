@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "xcaddy-builder"
 version = "1.0.0"
-description = "Build, package and publish scripts for the caddy-custom APT repository"
+description = "Build, package and publish scripts for the xcaddy APT repository"
 readme = "README.md"
 requires-python = ">=3.14"
 license = "MIT"

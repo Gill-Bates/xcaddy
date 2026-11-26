@@ -1,7 +1,7 @@
 # .github
 
 ## Purpose
-CI/CD for `caddy-custom`: `workflows/ci.yml` (PR gate, no secrets), `build.yml` (check, build, scan, sign, publish),
+CI/CD for `xcaddy`: `workflows/ci.yml` (PR gate, no secrets), `build.yml` (check, build, scan, sign, publish),
 `security.yml` (weekly read-only rescan), Renovate policy and the actionlint runner-label list.
 
 ## Rules

@@ -1,9 +1,4 @@
-# Default configuration of caddy-custom. The admin API listens on 2020 so that
-# it does not collide with an installed official caddy package (2019).
-{
-	admin localhost:2020
-}
-
-:8080 {
-	respond "caddy-custom is running"
+# Default configuration of xcaddy. Replace this site with your own configuration.
+:80 {
+	respond "xcaddy is running"
 }

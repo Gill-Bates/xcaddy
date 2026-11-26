@@ -4,7 +4,7 @@
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
 #
 
-"""Assemble and validate the caddy-custom .deb with dpkg-deb."""
+"""Assemble and validate the xcaddy .deb with dpkg-deb."""
 
 from __future__ import annotations
 
@@ -27,20 +27,20 @@ from common import (
     run_main,
 )
 
-DOC_DIR = "usr/share/doc/caddy-custom"
+DOC_DIR = "usr/share/doc/xcaddy"
 SCRIPTS = ("postinst", "prerm", "postrm")
 ALLOWED_FILES = (
-    "./usr/bin/caddy-custom",
-    "./usr/lib/systemd/system/caddy-custom.service",
+    "./usr/bin/caddy",
+    "./usr/lib/systemd/system/caddy.service",
 )
 ALLOWED_PREFIXES = (
-    "./etc/caddy-custom/",
+    "./etc/caddy/",
     f"./{DOC_DIR}/",
 )
 REQUIRED = (
-    "./usr/bin/caddy-custom",
-    "./usr/lib/systemd/system/caddy-custom.service",
-    "./etc/caddy-custom/Caddyfile",
+    "./usr/bin/caddy",
+    "./usr/lib/systemd/system/caddy.service",
+    "./etc/caddy/Caddyfile",
     f"./{DOC_DIR}/build-manifest.json",
 )
 PARENT_DIRS = (
@@ -64,18 +64,18 @@ def build_package(version: str, arch: str, binary: Path, manifest: Path, out: Pa
     require_tools("dpkg-deb")
     root = repo_root()
     out.mkdir(parents=True, exist_ok=True)
-    deb = out / f"caddy-custom_{version}_{arch}.deb"
-    with tempfile.TemporaryDirectory(prefix="caddy-custom-pkg-") as tmp:
+    deb = out / f"xcaddy_{version}_{arch}.deb"
+    with tempfile.TemporaryDirectory(prefix="xcaddy-pkg-") as tmp:
         stage = Path(tmp) / "pkg"
-        for sub in ("DEBIAN", "usr/bin", "usr/lib/systemd/system", "etc/caddy-custom", DOC_DIR):
+        for sub in ("DEBIAN", "usr/bin", "usr/lib/systemd/system", "etc/caddy", DOC_DIR):
             (stage / sub).mkdir(parents=True)
         files = {
-            binary: ("usr/bin/caddy-custom", 0o755),
-            root / "packaging/caddy-custom.service": (
-                "usr/lib/systemd/system/caddy-custom.service",
+            binary: ("usr/bin/caddy", 0o755),
+            root / "packaging/caddy.service": (
+                "usr/lib/systemd/system/caddy.service",
                 0o644,
             ),
-            root / "packaging/Caddyfile": ("etc/caddy-custom/Caddyfile", 0o644),
+            root / "packaging/Caddyfile": ("etc/caddy/Caddyfile", 0o644),
             root / "packaging/copyright": (f"{DOC_DIR}/copyright", 0o644),
             manifest: (f"{DOC_DIR}/build-manifest.json", 0o644),
             **{root / f"packaging/{s}": (f"DEBIAN/{s}", 0o755) for s in SCRIPTS},
@@ -83,7 +83,7 @@ def build_package(version: str, arch: str, binary: Path, manifest: Path, out: Pa
         for src, (dest, mode) in files.items():
             shutil.copyfile(src, stage / dest)
             (stage / dest).chmod(mode)
-        (stage / "DEBIAN/conffiles").write_text("/etc/caddy-custom/Caddyfile\n", encoding="utf-8")
+        (stage / "DEBIAN/conffiles").write_text("/etc/caddy/Caddyfile\n", encoding="utf-8")
         size = sum(
             p.stat().st_size for p in stage.rglob("*") if p.is_file() and "DEBIAN" not in p.parts
         )
@@ -124,7 +124,14 @@ def validate_deb(deb: Path, arch: str, version: str) -> None:
     print(run(["dpkg-deb", "--info", deb]).stdout)
     contents = run(["dpkg-deb", "--contents", deb]).stdout
     print(contents)
-    for field, want in (("Package", "caddy-custom"), ("Version", version), ("Architecture", arch)):
+    for field, want in (
+        ("Package", "xcaddy"),
+        ("Version", version),
+        ("Architecture", arch),
+        ("Provides", "caddy"),
+        ("Conflicts", "caddy"),
+        ("Replaces", "caddy"),
+    ):
         got = run(["dpkg-deb", "--field", deb, field]).stdout.strip()
         if got != want:
             problems.append(f"{field} is {got!r}, expected {want!r}")
@@ -138,9 +145,9 @@ def validate_deb(deb: Path, arch: str, version: str) -> None:
     for path in modes:
         if not (path in PARENT_DIRS or path in ALLOWED_FILES or path.startswith(ALLOWED_PREFIXES)):
             problems.append(f"unexpected path {path} (conflict risk with other packages)")
-    if modes.get("./usr/bin/caddy-custom") != "-rwxr-xr-x":
-        problems.append("caddy-custom binary must be -rwxr-xr-x")
-    with tempfile.TemporaryDirectory(prefix="caddy-custom-ctrl-") as tmp:
+    if modes.get("./usr/bin/caddy") != "-rwxr-xr-x":
+        problems.append("caddy binary must be -rwxr-xr-x")
+    with tempfile.TemporaryDirectory(prefix="xcaddy-ctrl-") as tmp:
         ctrl = Path(tmp) / "ctrl"
         run(["dpkg-deb", "--control", deb, ctrl])
         for name in SCRIPTS:
@@ -150,9 +157,9 @@ def validate_deb(deb: Path, arch: str, version: str) -> None:
             elif run(["sh", "-n", script], check=False).returncode != 0:
                 problems.append(f"maintainer script {name} has a syntax error")
         if (ctrl / "conffiles").read_text(encoding="utf-8").split() != [
-            "/etc/caddy-custom/Caddyfile"
+            "/etc/caddy/Caddyfile"
         ]:
-            problems.append("conffiles must list exactly /etc/caddy-custom/Caddyfile")
+            problems.append("conffiles must list exactly /etc/caddy/Caddyfile")
     if problems:
         raise ScriptError("package validation failed:\n" + "\n".join(problems))
 

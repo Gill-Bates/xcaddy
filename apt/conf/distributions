@@ -4,5 +4,5 @@ Codename: stable
 Suite: stable
 Architectures: amd64 arm64
 Components: main
-Description: Custom Caddy builds (caddy-custom)
+Description: Custom Caddy builds (xcaddy)
 SignWith: @SIGN_WITH@

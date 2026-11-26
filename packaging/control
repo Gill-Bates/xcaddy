@@ -1,13 +1,15 @@
-Package: caddy-custom
+Package: xcaddy
 Version: @VERSION@
 Architecture: @ARCH@
 Maintainer: xcaddy maintainers <noreply@users.noreply.github.com>
 Installed-Size: @INSTALLED_SIZE@
 Depends: adduser, ca-certificates, init-system-helpers
+Provides: caddy
+Conflicts: caddy
+Replaces: caddy
 Section: httpd
 Priority: optional
 Homepage: https://github.com/Gill-Bates/xcaddy
 Description: Caddy web server with additional plugins (custom build)
- Standalone build of Caddy created with xcaddy. It installs as
- /usr/bin/caddy-custom with its own service, user and paths, so it can
- coexist with the official caddy package.
+ Plugin-extended Caddy web server built with xcaddy. It replaces the
+ official caddy package while retaining its binary, service and data paths.

@@ -1,5 +1,5 @@
 name: build
-run-name: build caddy-custom (${{ github.event_name }})
+run-name: build xcaddy (${{ github.event_name }})
 
 on:
   schedule:
@@ -223,8 +223,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y reprepro
           sudo env "PATH=$PATH" python3 scripts/test.py apt \
-            --old-deb "baseline/caddy-custom_${CADDY_VERSION}+custom.0_${ARCH}.deb" \
-            --new-deb "dist/caddy-custom_${PKG_VERSION}_${ARCH}.deb" \
+            --old-deb "baseline/xcaddy_${CADDY_VERSION}+custom.0_${ARCH}.deb" \
+            --new-deb "dist/xcaddy_${PKG_VERSION}_${ARCH}.deb" \
             --allow-host-changes --check-binary
 
   trivy-scan:
@@ -294,7 +294,7 @@ jobs:
           PKG_VERSION: ${{ needs.check-version.outputs.package_version }}
         run: |
           for arch in amd64 arm64; do
-            python3 scripts/package.py validate "bundle/caddy-custom_${PKG_VERSION}_${arch}.deb" \
+            python3 scripts/package.py validate "bundle/xcaddy_${PKG_VERSION}_${arch}.deb" \
               --version "$PKG_VERSION" --arch "$arch" > /dev/null
           done
           for arch in amd64 arm64; do
@@ -375,7 +375,7 @@ jobs:
       - uses: ./.github/actions/persist-state
         with:
           token: ${{ github.token }}
-          message: Publish caddy-custom ${{ needs.check-version.outputs.package_version }}
+          message: Publish xcaddy ${{ needs.check-version.outputs.package_version }}
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           name: pages-publish
@@ -465,7 +465,7 @@ jobs:
           opts=(-o "Dir::Etc::sourcelist=$d/sources.list" -o Dir::Etc::sourceparts=/dev/null
                 -o "Dir::State::lists=$d/lists" -o "Dir::Cache=$d/cache" -o APT::Sandbox::User=root)
           sudo apt-get "${opts[@]}" update
-          apt-cache "${opts[@]}" policy caddy-custom | tee policy.txt
+          apt-cache "${opts[@]}" policy xcaddy | tee policy.txt
           grep -Fx "  Candidate: ${PKG_VERSION}" policy.txt
 
   confirm-published:

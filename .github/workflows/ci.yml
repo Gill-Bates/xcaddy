@@ -88,6 +88,6 @@ jobs:
           python3 scripts/package.py build --version "${version}+custom.0" --arch "$ARCH" \
             --binary build/caddy --manifest build/build-manifest.json --out baseline
           sudo env "PATH=$PATH" python3 scripts/test.py apt \
-            --old-deb "baseline/caddy-custom_${version}+custom.0_${ARCH}.deb" \
-            --new-deb "dist/caddy-custom_${version}+custom.1_${ARCH}.deb" \
+            --old-deb "baseline/xcaddy_${version}+custom.0_${ARCH}.deb" \
+            --new-deb "dist/xcaddy_${version}+custom.1_${ARCH}.deb" \
             --allow-host-changes --check-binary

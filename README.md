@@ -1,6 +1,6 @@
 # xcaddy
 
-Daily-checked, plugin-extended Caddy as the Debian package `caddy-custom`, built with xcaddy on
+Daily-checked, plugin-extended Caddy as the Debian package `xcaddy`, built with xcaddy on
 GitHub-hosted runners and served from a GPG-signed APT repository on GitHub Pages:
 `https://gill-bates.github.io/xcaddy/`.
 
@@ -54,7 +54,7 @@ python3 scripts/package.py build --version 2.11.9+custom.1 --arch amd64 \
   --binary build/caddy --manifest build/build-manifest.json --out dist
 ```
 
-The package contains `/usr/share/doc/caddy-custom/build-manifest.json` (Caddy, plugin, Go and xcaddy versions,
+The package contains `/usr/share/doc/xcaddy/build-manifest.json` (Caddy, plugin, Go and xcaddy versions,
 binary SHA-256).
 
 ## 4. Repository setup
@@ -100,40 +100,40 @@ Suites: stable
 Components: main
 Signed-By: /etc/apt/keyrings/xcaddy.asc
 SRC
-sudo apt update && sudo apt install caddy-custom
+sudo apt update && sudo apt install xcaddy
 ```
 
 Upgrade with `sudo apt update && sudo apt upgrade`.
 
 ## 6. Operation
 
-The package is standalone: `/usr/bin/caddy-custom`, unit `caddy-custom.service`, user `caddy-custom`,
-configuration `/etc/caddy-custom/Caddyfile` (conffile, kept on upgrade), data `/var/lib/caddy-custom`.
-The default Caddyfile serves port 8080 with the admin API on 2020, so it coexists with the official `caddy`.
+The `xcaddy` package replaces the official `caddy` package and keeps its paths: binary
+`/usr/bin/caddy`, unit `caddy.service`, service user and group `caddy`, configuration
+`/etc/caddy/Caddyfile`, and data `/var/lib/caddy`. The Caddyfile is a conffile, so local
+configuration is retained during upgrades. Caddy uses its standard admin API on `localhost:2019`.
 
 | Action | Behavior |
 | --- | --- |
 | install | enabled; started only if the configuration validates and the ports are free |
 | upgrade | restarted only if the service ran and the configuration validates |
 | `apt remove` | service stopped, configuration and data kept |
-| `apt purge` | configuration, data (`/var/lib/caddy-custom`, **including TLS certificates and ACME account keys**) and user removed; only the package directories, never across symlinks or mount points |
+| `apt purge` | configuration, data (`/var/lib/caddy`, **including TLS certificates and ACME account keys**) and service user removed; cleanup stays inside package directories and does not cross symlinks or mount points |
 
 Back up the TLS identities before a purge or a host move:
 
 ```bash
-sudo tar --numeric-owner -C / -czf caddy-custom-backup-$(date +%F).tar.gz var/lib/caddy-custom etc/caddy-custom
+sudo tar --numeric-owner -C / -czf xcaddy-backup-$(date +%F).tar.gz var/lib/caddy etc/caddy
 ```
 
 ```bash
-sudo systemctl status caddy-custom
-sudo systemctl reload caddy-custom
-sudo apt remove caddy-custom      # or: sudo apt purge caddy-custom
+sudo systemctl status caddy
+sudo systemctl reload caddy
+sudo apt remove xcaddy      # or: sudo apt purge xcaddy
 ```
 
-Replacing an existing official Caddy: stop and disable `caddy`, point `/etc/caddy-custom/Caddyfile` at
-the same content and ports, then enable `caddy-custom`. A true in-place replacement would need
-`Conflicts: caddy`, `Replaces: caddy` and `Provides: caddy` in `packaging/control` plus the official paths;
-this repository deliberately ships the standalone variant.
+Installing `xcaddy` replaces the official `caddy` package. The existing `/etc/caddy/Caddyfile`
+and `/var/lib/caddy` data stay in place, so Caddy can reuse its configuration and TLS certificates.
+Purging `xcaddy` removes those paths and the `caddy` service account.
 
 ## 7. Trivy policy
 

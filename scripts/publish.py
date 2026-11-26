@@ -40,7 +40,7 @@ from common import (
 )
 
 CODENAME = "stable"
-PACKAGE = "caddy-custom"
+PACKAGE = "xcaddy"
 PAGES_URL = "https://gill-bates.github.io/xcaddy"
 
 
@@ -220,7 +220,7 @@ def add_packages(repo: Path, debs: list[Path], archs: tuple[str, ...] = ARCHS) -
 
 
 def _published_packages(repo: Path, arch: str) -> dict[str, tuple[str, str]]:
-    """Version -> (Filename, SHA256) of caddy-custom in the repository's Packages index."""
+    """Version -> (Filename, SHA256) of xcaddy in the repository's Packages index."""
     path = repo / "dists" / CODENAME / "main" / f"binary-{arch}" / "Packages"
     if not path.is_file():
         return {}
@@ -507,7 +507,7 @@ def export_site(repo: Path, out: Path) -> None:
     (out / ".nojekyll").write_text("", encoding="utf-8")
     (out / "index.html").write_text(
         "<!doctype html><title>xcaddy APT repository</title>"
-        "<p>Signed APT repository for caddy-custom. See the project README for setup.</p>\n",
+        "<p>Signed APT repository for xcaddy. See the project README for setup.</p>\n",
         encoding="utf-8",
     )
 

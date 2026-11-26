@@ -27,14 +27,20 @@ def test_elf_arch_rejects_non_elf(tmp_path):
 
 
 @pytest.mark.parametrize("arch", ["amd64", "arm64"])
-def test_package_is_valid_and_standalone(arch, fake_elf, tmp_path):
+def test_package_uses_standard_caddy_paths(arch, fake_elf, tmp_path):
     manifest = tmp_path / "m.json"
     manifest.write_text("{}")
     deb = build_package("2.11.9+custom.2", arch, fake_elf(arch), manifest, tmp_path / "out")
-    assert deb.name == f"caddy-custom_2.11.9+custom.2_{arch}.deb"
+    assert deb.name == f"xcaddy_2.11.9+custom.2_{arch}.deb"
     names = run(["dpkg-deb", "--contents", deb]).stdout
-    assert "./usr/bin/caddy-custom" in names
-    assert "/usr/bin/caddy\n" not in names
+    assert "./usr/bin/caddy " in names
+    assert "./usr/lib/systemd/system/caddy.service" in names
+    assert "./etc/caddy/Caddyfile" in names
+    fields = run(["dpkg-deb", "--field", deb]).stdout
+    assert "Package: xcaddy" in fields
+    assert "Provides: caddy" in fields
+    assert "Conflicts: caddy" in fields
+    assert "Replaces: caddy" in fields
 
 
 def test_wrong_architecture_is_rejected(fake_elf, tmp_path):
@@ -71,9 +77,9 @@ def test_the_same_inputs_build_byte_identical_packages(tmp_path, fake_elf):
 @pytest.mark.parametrize(
     "extra",
     [
-        "usr/bin/caddy-custom-helper",
-        "etc/caddy-custom-malicious/config",
-        "usr/lib/systemd/system/caddy-custom.service.d/override.conf",
+        "usr/bin/caddy-helper",
+        "etc/caddy-malicious/config",
+        "usr/lib/systemd/system/caddy.service.d/override.conf",
     ],
 )
 def test_validation_rejects_paths_that_only_share_a_name_prefix(extra, fake_elf, tmp_path):

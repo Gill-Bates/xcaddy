@@ -4,11 +4,12 @@
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
 #
 
-"""Install, upgrade and no-op tests of caddy-custom against a locally signed APT repository."""
+"""Install, upgrade and no-op tests of xcaddy against a locally signed APT repository."""
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import tempfile
 from pathlib import Path
@@ -24,7 +25,7 @@ from common import (
 )
 from package import validate_deb
 
-NAME = "caddy-custom"
+NAME = "xcaddy"
 
 
 def installed_version() -> str:
@@ -43,15 +44,76 @@ def systemd_running() -> bool:
 
 def check_installed(version: str, check_binary: bool) -> None:
     expect(installed_version() == version, f"installed version is {version}")
-    expect(Path("/usr/bin/caddy-custom").is_file(), "binary installed")
-    expect(Path("/etc/caddy-custom/Caddyfile").is_file(), "config installed")
-    expect(run(["getent", "passwd", NAME], check=False).returncode == 0, "service user exists")
+    expect(Path("/usr/bin/caddy").is_file(), "binary installed")
+    expect(Path("/etc/caddy/Caddyfile").is_file(), "config installed")
+    expect(run(["getent", "passwd", "caddy"], check=False).returncode == 0, "caddy user exists")
     if check_binary:
-        run(["/usr/bin/caddy-custom", "validate", "--config", "/etc/caddy-custom/Caddyfile"])
-        log("info", "ok: caddy-custom validates the default Caddyfile")
+        run(["/usr/bin/caddy", "validate", "--config", "/etc/caddy/Caddyfile"])
+        log("info", "ok: xcaddy validates the default Caddyfile")
+        modules = set(run(["/usr/bin/caddy", "list-modules"]).stdout.splitlines())
+        lock = json.loads(
+            (Path(__file__).resolve().parent.parent / "config/plugins.lock").read_text(
+                encoding="utf-8"
+            )
+        )
+        for plugin in lock["plugins"]:
+            required = set(plugin["module_ids"])
+            alternatives = set(plugin["module_ids_any"])
+            expect(required <= modules, f"required modules are present for {plugin['module']}")
+            expect(
+                not alternatives or bool(alternatives & modules),
+                f"plugin module is present for {plugin['module']}",
+            )
     if systemd_running():
-        enabled = run(["systemctl", "is-enabled", NAME], check=False).stdout.strip()
+        expect(
+            run(["systemctl", "is-active", "--quiet", "caddy"], check=False).returncode == 0,
+            "caddy.service is running",
+        )
+    if systemd_running():
+        enabled = run(["systemctl", "is-enabled", "caddy"], check=False).stdout.strip()
         expect(enabled == "enabled", f"service is enabled (systemctl is-enabled: {enabled!r})")
+
+
+def install_legacy_caddy(tmp: Path) -> None:
+    """Install a file-compatible caddy package to exercise dpkg replacement semantics."""
+    require_tools("dpkg", "dpkg-deb", "adduser")
+    if (
+        run(["dpkg-query", "-W", "-f=${Status}", "caddy"], check=False).stdout.strip()
+        == "install ok installed"
+    ):
+        raise ScriptError("install test requires a host without an installed caddy package")
+    stage = tmp / "legacy-caddy"
+    for path in ("DEBIAN", "usr/bin", "usr/lib/systemd/system", "etc/caddy"):
+        (stage / path).mkdir(parents=True, exist_ok=True)
+    (stage / "DEBIAN/control").write_text(
+        "Package: caddy\nVersion: 2.11.9-1\nArchitecture: all\n"
+        "Maintainer: test <test@example.invalid>\nDepends: adduser\n"
+        "Description: Caddy migration fixture\n",
+        encoding="utf-8",
+    )
+    (stage / "DEBIAN/conffiles").write_text("/etc/caddy/Caddyfile\n", encoding="utf-8")
+    (stage / "DEBIAN/postinst").write_text(
+        "#!/bin/sh\nset -e\n"
+        "if ! getent passwd caddy >/dev/null; then "
+        "adduser --system --group --home /var/lib/caddy --shell /usr/sbin/nologin caddy; fi\n",
+        encoding="utf-8",
+    )
+    (stage / "DEBIAN/postinst").chmod(0o755)
+    (stage / "usr/bin/caddy").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    (stage / "usr/bin/caddy").chmod(0o755)
+    (stage / "etc/caddy/Caddyfile").write_text(
+        ':18080 { respond "migration fixture" }\n', encoding="utf-8"
+    )
+    (stage / "usr/lib/systemd/system/caddy.service").write_text(
+        "[Unit]\nDescription=Caddy\n[Service]\nType=notify\nUser=caddy\nGroup=caddy\n"
+        "ExecStart=/usr/bin/caddy run --config /etc/caddy/Caddyfile\n"
+        "[Install]\nWantedBy=multi-user.target\n",
+        encoding="utf-8",
+    )
+    deb = tmp / "caddy_2.11.9-1_all.deb"
+    run(["dpkg-deb", "--root-owner-group", "--build", stage, deb])
+    run(["dpkg", "-i", deb])
+    Path("/var/lib/caddy/migration-marker").write_text("keep this data\n", encoding="utf-8")
 
 
 def apt_flow(old_deb: Path, new_deb: Path, check_binary: bool) -> None:
@@ -94,11 +156,29 @@ def apt_flow(old_deb: Path, new_deb: Path, check_binary: bool) -> None:
             env = {**os.environ, "DEBIAN_FRONTEND": "noninteractive"}
 
             def apt(*args: str) -> None:
-                run(["apt-get", "-y", *opts, *args], env=env)
+                run(
+                    ["apt-get", "-y", *opts, "-o", "Dpkg::Options::=--force-confold", *args],
+                    env=env,
+                )
 
             apt("update")
+            install_legacy_caddy(tmp)
+            legacy_config = Path("/etc/caddy/Caddyfile").read_text(encoding="utf-8")
             apt("install", NAME)
             check_installed(old_v, check_binary)
+            expect(
+                Path("/etc/caddy/Caddyfile").read_text(encoding="utf-8") == legacy_config,
+                "official Caddyfile is unchanged after replacement",
+            )
+            expect(
+                Path("/var/lib/caddy/migration-marker").read_text(encoding="utf-8")
+                == "keep this data\n",
+                "official Caddy data is unchanged after replacement",
+            )
+            expect(
+                run(["dpkg-query", "-W", "-f=${Status}", "caddy"], check=False).returncode != 0,
+                "official caddy package is removed",
+            )
             expect(publish_deb(new_deb, new_v), "newer version published")
             # stale lists and an empty archive cache: the old index must still resolve to a file
             apt("clean")
@@ -109,11 +189,11 @@ def apt_flow(old_deb: Path, new_deb: Path, check_binary: bool) -> None:
             check_installed(new_v, check_binary)
             expect(not publish_deb(new_deb, new_v), "repeated run without change is a no-op")
             apt("remove", NAME)
-            expect(Path("/etc/caddy-custom/Caddyfile").is_file(), "config kept on remove")
-            expect(Path("/var/lib/caddy-custom").is_dir(), "data kept on remove")
+            expect(Path("/etc/caddy/Caddyfile").is_file(), "config kept on remove")
+            expect(Path("/var/lib/caddy").is_dir(), "data kept on remove")
             apt("purge", NAME)
-            expect(not Path("/etc/caddy-custom").exists(), "config removed on purge")
-            expect(not Path("/var/lib/caddy-custom").exists(), "data removed on purge")
+            expect(not Path("/etc/caddy").exists(), "config removed on purge")
+            expect(not Path("/var/lib/caddy").exists(), "data removed on purge")
             gone = run(["getent", "passwd", NAME], check=False).returncode != 0
             expect(gone, "service user removed on purge")
         finally:
@@ -127,7 +207,7 @@ def main() -> int:
     apt.add_argument("--old-deb", required=True, type=Path)
     apt.add_argument("--new-deb", required=True, type=Path)
     apt.add_argument("--allow-host-changes", action="store_true", required=True)
-    apt.add_argument("--check-binary", action="store_true", help="run caddy-custom validate")
+    apt.add_argument("--check-binary", action="store_true", help="run xcaddy validate")
     ns = parser.parse_args()
     apt_flow(ns.old_deb, ns.new_deb, ns.check_binary)
     return 0

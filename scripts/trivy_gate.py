@@ -115,7 +115,7 @@ def fetch_published(url: str, arch: str, dest: Path, fingerprint: str) -> Path:
     if not re.fullmatch(r"[A-Za-z0-9._+~-]+\.deb", names[0]):
         raise ScriptError(f"unsafe package name in the release manifest: {names[0]!r}")
     deb = dest / names[0]
-    publish._download(f"{url.rstrip('/')}/pool/main/c/caddy-custom/{names[0]}", deb)
+    publish._download(f"{url.rstrip('/')}/pool/main/x/xcaddy/{names[0]}", deb)
     if sha256_file(deb) != manifest["packages"][names[0]]:
         raise ScriptError(f"{names[0]} does not match the SHA-256 in the release manifest")
     return deb

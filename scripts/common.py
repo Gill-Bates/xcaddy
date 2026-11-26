@@ -123,7 +123,7 @@ def _git(*args: str) -> str | None:
     cmd = ["git", "-C", str(Path(__file__).resolve().parent), *args]
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=False)
-    except OSError, subprocess.SubprocessError:
+    except (OSError, subprocess.SubprocessError):
         return None
     return (proc.stdout.strip() or None) if proc.returncode == 0 else None
 
