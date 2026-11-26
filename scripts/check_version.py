@@ -169,7 +169,8 @@ def decide(
         and status.get("release_id") == state.get("release_id")
     )
     unconfirmed = not confirmed
-    if s_hash == ihash and unconfirmed:
+    # force escapes a recovery whose packages are gone (build artifacts expire after 90 days).
+    if s_hash == ihash and unconfirmed and not force:
         return Decision(False, "recover", latest, s_rev, recover=True)
     if s_hash != ihash:
         return Decision(True, "config-changed", latest, s_rev + 1)

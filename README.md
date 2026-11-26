@@ -22,8 +22,13 @@ check-version -> build (amd64, arm64) -> package -> install-test, trivy-scan
 - Publishing needs both architectures, passing tests, a passing Trivy gate and valid packages.
 - Runs are serialized and never cancelled; GitHub keeps one waiting run, so a newer run replaces a waiting `workflow_dispatch` with `force_build`. Dispatch it again if it was replaced.
   A failed run never touches the published state; the state lives on the `apt-repo` branch (reprepro
-  `conf`, `db`, pool) and is pushed fast-forward only.
+  `conf`, `db`, indexes, signed manifest; no `.deb` files) and is pushed fast-forward only.
+- Packages exist only on GitHub Pages. Before each export the run restores them (`publish.py hydrate`)
+  from the build artifacts of the same run or from the public site, checked against the SHA256 in the
+  signed indexes.
 - `stable` holds only the newest version per architecture; reprepro drops older ones, which is the retention.
+  A replaced `.deb` stays downloadable while an old index still names it (14 days after the switch), so
+  clients with an older `apt update` do not fail.
 - `ci.yml` validates pull requests without secrets (ruff, pytest, ShellCheck, actionlint, probe build,
   install and upgrade test with a throwaway key). `security.yml` rescans the published packages weekly.
 - No separate `pages.yml`: the Pages deployment is one job that needs the signed artifact of the same run.
@@ -163,8 +168,9 @@ packages on the host and therefore needs `--allow-host-changes`; run it only in 
 | "is not newer than published" | Downgrade refused; the repository already holds an equal or newer revision |
 | Pages deploy failed after the push to `apt-repo` | Re-run the failed `deploy-pages` job; the artifact is from the same run |
 | `Hash Sum mismatch` on clients | Run `apt update` again; by-hash metadata keeps old index files reachable |
-| Status stays DEPLOYED | `verify-publication` failed; the next run detects it (`recover`), re-stages the last signed snapshot and confirms |
+| Status stays DEPLOYED | `verify-publication` failed; the next run detects it (`recover`), re-stages the last signed snapshot with the packages from the `release-bundle` artifact of its build run and confirms |
+| `recover-stage` cannot download `release-bundle` | The build run's artifacts expired (90 days); dispatch `build.yml` with `force_build`, which publishes the next revision |
 | Scheduled run did nothing | No new stable Caddy and no input change (see the job summary) |
 
-Recovery of an older package: take the `.deb` from the workflow artifacts or a release archive and
-publish it through a new, higher revision; versions are never reused for different bytes.
+Recovery of an older package: take the `.deb` from the workflow artifacts (90 days) and publish it
+through a new, higher revision; versions are never reused for different bytes.

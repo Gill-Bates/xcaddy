@@ -305,7 +305,8 @@ jobs:
           name: release-bundle
           path: bundle/
           if-no-files-found: error
-          retention-days: 7
+          # recover-stage takes the packages of a never-served stage from here.
+          retention-days: 90
 
   sign-and-publish:
     needs: [check-version, prepare-apt-repository]
@@ -361,6 +362,7 @@ jobs:
         run: |
           fpr=$(sed -n 's/^fingerprint=//p' fingerprint.txt | tail -n 1)
           python3 scripts/publish.py init --repo-dir repo-state --fingerprint "$fpr"
+          python3 scripts/publish.py hydrate --repo-dir repo-state --url "$PUBLIC_URL" --from bundle
           python3 scripts/publish.py add --repo-dir repo-state bundle/*.deb | tee add.txt
           if grep -q '^added=true' add.txt; then
             python3 scripts/publish.py finalize --repo-dir repo-state --fingerprint "$fpr" \
@@ -391,6 +393,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+      actions: read
     outputs:
       release_id: ${{ steps.release.outputs.release_id }}
     steps:
@@ -400,6 +403,18 @@ jobs:
       - uses: ./.github/actions/restore-state
         with:
           token: ${{ github.token }}
+      - name: Run that built the staged packages
+        id: source
+        run: |
+          run_id=$(jq -r '.source_run_id // ""' repo-state/release-manifest.json)
+          [[ "$run_id" =~ ^[0-9]+$ ]] || { echo "ERROR: the staged manifest names no build run; dispatch with force_build" >&2; exit 1; }
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-bundle
+          path: bundle
+          run-id: ${{ steps.source.outputs.run_id }}
+          github-token: ${{ github.token }}
       - name: Re-stage the staged snapshot (signer pinned, version bound to the decision)
         env:
           KEY_ID: ${{ vars.APT_GPG_KEY_ID }}
@@ -407,6 +422,7 @@ jobs:
         run: |
           [ -n "$EXPECTED" ] || { echo "ERROR: no expected package version" >&2; exit 1; }
           python3 scripts/publish.py verify-state repo-state --fingerprint "$KEY_ID" --expect-package-version "$EXPECTED"
+          python3 scripts/publish.py hydrate --repo-dir repo-state --url "$PUBLIC_URL" --from bundle --require-current
           python3 scripts/publish.py export-site --repo-dir repo-state --out site
           python3 scripts/publish.py release-id --repo-dir repo-state | tee release.txt
           release_id=$(sed -n 's/^release_id=//p' release.txt | tail -n 1)
@@ -499,6 +515,7 @@ jobs:
           [ -n "$RELEASE_ID" ] || { echo "ERROR: no release id from the publishing job" >&2; exit 1; }
           fpr=$(sed -n 's/^fingerprint=//p' fingerprint.txt | tail -n 1)
           python3 scripts/publish.py verify-state repo-state --fingerprint "$fpr" --expect-release-id "$RELEASE_ID"
+          python3 scripts/publish.py hydrate --repo-dir repo-state --url "$PUBLIC_URL" --require-current
           python3 scripts/publish.py set-status --repo-dir repo-state --fingerprint "$fpr" --status VERIFIED
           python3 scripts/publish.py set-status --repo-dir repo-state --fingerprint "$fpr" --status PUBLISHED
           python3 scripts/publish.py export-site --repo-dir repo-state --out site

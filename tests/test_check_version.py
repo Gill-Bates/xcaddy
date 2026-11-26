@@ -124,6 +124,11 @@ def test_unconfirmed_release_triggers_recovery_not_a_rebuild(status):
     assert (d.should_build, d.recover, d.reason, d.revision) == (False, True, "recover", 3)
 
 
+def test_force_escapes_a_recovery_with_the_next_revision():
+    d = decide("2.11.9", STATE, "aaa", True, None)
+    assert (d.should_build, d.recover, d.reason, d.revision) == (True, False, "forced", 4)
+
+
 def test_new_version_wins_over_recovery():
     d = decide("2.11.10", STATE, "aaa", False, None)
     assert (d.should_build, d.recover) == (True, False)

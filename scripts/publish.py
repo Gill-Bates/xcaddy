@@ -165,6 +165,8 @@ def init_repo(repo: Path, fingerprint: str) -> None:
     (repo / "conf/distributions").write_text(
         template.replace("@SIGN_WITH@", fingerprint), encoding="utf-8"
     )
+    # Packages are served only by GitHub Pages; hydrate() restores them before each export.
+    (repo / ".gitignore").write_text("*.deb\n", encoding="utf-8")
 
 
 def list_versions(repo: Path) -> list[str]:
@@ -276,6 +278,77 @@ def prune_retained(repo: Path, dist: Path) -> None:
             deb.unlink()
 
 
+def hydrate(repo: Path, base: str, local_dirs: list[Path], require_current: bool) -> None:
+    """Restore the .deb files the apt-repo branch leaves out, from local_dirs or the public site.
+
+    Paths and SHA256 come from the Packages indexes in the state; a mismatching file is refused.
+    Packages named only by an older by-hash index go to RETAINED_DIR; a missing one only warns.
+    """
+    dist = repo / "dists" / CODENAME
+    current: dict[str, str] = {}
+    for path in dist.glob("main/binary-*/Packages"):
+        current.update(_package_entries(path.read_text(encoding="utf-8")))
+    older: dict[str, str] = {}
+    for path in dist.glob("main/binary-*/by-hash/SHA256/*"):
+        data = path.read_bytes()
+        if data[:2] == b"\x1f\x8b":
+            data = gzip.decompress(data)
+        for filename, digest in _package_entries(data.decode("utf-8", errors="ignore")):
+            if filename not in current:
+                older[filename] = digest
+    local = {sha256_file(deb): deb for d in local_dirs for deb in d.glob("*.deb")}
+    base = base.rstrip("/")
+    missing = []
+    for filename, digest in [*current.items(), *older.items()]:
+        target = repo / filename if filename in current else repo / RETAINED_DIR / filename
+        if target.is_file() and sha256_file(target) == digest:
+            continue
+        if _restore_deb(target, digest, local.get(digest), f"{base}/{filename}"):
+            continue
+        if filename in current:
+            missing.append(filename)
+        else:
+            log("warning", f"{filename} is not available; clients with old indexes cannot get it")
+    if missing:
+        message = f"published packages are not available: {', '.join(sorted(missing))}"
+        if require_current:
+            raise ScriptError(message)
+        log("warning", message)
+
+
+def _restore_deb(target: Path, digest: str, source: Path | None, url: str) -> bool:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if source is not None:
+        shutil.copyfile(source, target)
+    elif not _fetch_if_present(url, target):
+        return False
+    if sha256_file(target) != digest:
+        target.unlink()
+        raise ScriptError(f"{url} differs from the SHA256 in the signed Packages index")
+    return True
+
+
+def _fetch_if_present(url: str, dest: Path, attempts: int = 3) -> bool:
+    """Download url to dest; False when the server reports the file as absent."""
+    last: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            _download_once(url, dest)
+            return True
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                return False
+            last = exc
+        except urllib.error.URLError as exc:
+            if isinstance(exc.reason, FileNotFoundError):
+                return False
+            last = exc
+        except TimeoutError as exc:
+            last = exc
+        time.sleep(10 * (attempt + 1))
+    raise ScriptError(f"cannot download {url}: {last}")
+
+
 def _gpg_env() -> dict[str, str]:
     return _clean_env(GNUPGHOME=str(gnupg_home()))
 
@@ -361,6 +434,7 @@ def finalize(
         "signing_fingerprint": fingerprint,
         "packages": packages,
         "source_commit": os.environ.get("GITHUB_SHA", "unknown"),
+        "source_run_id": os.environ.get("GITHUB_RUN_ID", "unknown"),
     }
     path = repo / "release-manifest.json"
     path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
@@ -768,6 +842,11 @@ def main() -> int:
     vs.add_argument("site", type=Path)
     vs.add_argument("--fingerprint", required=True)
     vs.add_argument("--expect-release-id", default="")
+    hyd = sub.add_parser("hydrate")
+    hyd.add_argument("--repo-dir", required=True, type=Path)
+    hyd.add_argument("--url", default=PAGES_URL)
+    hyd.add_argument("--from", dest="local_dirs", action="append", default=[], type=Path)
+    hyd.add_argument("--require-current", action="store_true")
     rid = sub.add_parser("release-id")
     rid.add_argument("--repo-dir", required=True, type=Path)
     fp = sub.add_parser("fetch-public")
@@ -802,6 +881,8 @@ def main() -> int:
         check_ancestry(ns.repo_dir, ns.commit)
     elif ns.command == "verify-site":
         verify_site(ns.site, fingerprint=ns.fingerprint, release_id=ns.expect_release_id)
+    elif ns.command == "hydrate":
+        hydrate(ns.repo_dir, ns.url, ns.local_dirs, ns.require_current)
     elif ns.command == "release-id":
         manifest = json.loads((ns.repo_dir / "release-manifest.json").read_text(encoding="utf-8"))
         set_output("release_id", manifest["release_id"])

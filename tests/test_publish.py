@@ -796,3 +796,72 @@ def test_recovery_and_confirmation_are_bound_to_the_expected_release():
     assert text.count("--expect-release-id") >= 2
     verify = _step_text(jobs["verify-publication"])
     assert '[ -n "$RELEASE_ID" ]' in verify
+
+
+def _write_index(path, entries):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "".join(f"Package: xcaddy\nFilename: {f}\nSHA256: {d}\n\n" for f, d in entries),
+        encoding="utf-8",
+    )
+
+
+@pytest.fixture
+def hydrate_env(tmp_path):
+    """A state without .deb files, a public site serving them, and their signed digests."""
+    import hashlib
+
+    repo, site = tmp_path / "repo", tmp_path / "site"
+    files = {}
+    for version in ("2.11.9+xcaddy.1", "2.11.10+xcaddy.1"):
+        name = f"pool/main/x/xcaddy/xcaddy_{version}_amd64.deb"
+        body = f"deb {version}".encode()
+        (site / name).parent.mkdir(parents=True, exist_ok=True)
+        (site / name).write_bytes(body)
+        files[version] = (name, hashlib.sha256(body).hexdigest())
+    binary = repo / "dists" / "stable" / "main" / "binary-amd64"
+    _write_index(binary / "Packages", [files["2.11.10+xcaddy.1"]])
+    _write_index(binary / "by-hash" / "SHA256" / "old", [files["2.11.9+xcaddy.1"]])
+    return repo, site, files
+
+
+def test_init_keeps_packages_out_of_the_state_branch(tmp_path):
+    publish.init_repo(tmp_path, "0" * 40)
+    assert (tmp_path / ".gitignore").read_text(encoding="utf-8") == "*.deb\n"
+
+
+def test_hydrate_restores_current_and_retained_packages_from_the_site(hydrate_env):
+    repo, site, files = hydrate_env
+    publish.hydrate(repo, site.as_uri(), [], require_current=True)
+    current, older = files["2.11.10+xcaddy.1"][0], files["2.11.9+xcaddy.1"][0]
+    assert (repo / current).read_bytes() == (site / current).read_bytes()
+    assert (repo / publish.RETAINED_DIR / older).read_bytes() == (site / older).read_bytes()
+    assert not (repo / older).exists()
+
+
+def test_hydrate_prefers_local_packages_over_the_site(hydrate_env, tmp_path):
+    repo, site, files = hydrate_env
+    current = files["2.11.10+xcaddy.1"][0]
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    shutil.move(site / current, bundle / Path(current).name)
+    publish.hydrate(repo, site.as_uri(), [bundle], require_current=True)
+    assert (repo / current).read_bytes() == b"deb 2.11.10+xcaddy.1"
+
+
+def test_hydrate_refuses_bytes_that_differ_from_the_signed_index(hydrate_env):
+    repo, site, files = hydrate_env
+    current = files["2.11.10+xcaddy.1"][0]
+    (site / current).write_bytes(b"tampered")
+    with pytest.raises(ScriptError, match="differs from the SHA256"):
+        publish.hydrate(repo, site.as_uri(), [], require_current=False)
+    assert not (repo / current).exists()
+
+
+def test_hydrate_fails_only_when_a_missing_current_package_is_required(hydrate_env):
+    repo, site, files = hydrate_env
+    (site / files["2.11.10+xcaddy.1"][0]).unlink()
+    (site / files["2.11.9+xcaddy.1"][0]).unlink()
+    publish.hydrate(repo, site.as_uri(), [], require_current=False)
+    with pytest.raises(ScriptError, match="not available"):
+        publish.hydrate(repo, site.as_uri(), [], require_current=True)
