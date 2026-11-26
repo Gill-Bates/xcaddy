@@ -46,7 +46,7 @@ class Decision:
 
     @property
     def package_version(self) -> str:
-        return f"{self.caddy_version}+custom.{self.revision}"
+        return f"{self.caddy_version}+xcaddy.{self.revision}"
 
 
 def fetch_releases(token: str | None = None) -> Any:
@@ -123,7 +123,7 @@ def _package_version(state: dict[str, Any]) -> str:
         raise ScriptError("state file is invalid") from exc
     if not VERSION_RE.fullmatch(version):
         raise ScriptError(f"state file has malformed version {version!r}")
-    return f"{version}+custom.{revision}"
+    return f"{version}+xcaddy.{revision}"
 
 
 def _staged_ahead(public: dict[str, Any] | None, staged: dict[str, Any] | None) -> bool:

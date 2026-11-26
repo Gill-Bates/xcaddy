@@ -344,7 +344,7 @@ def finalize(
     if "BEGIN PGP PUBLIC KEY BLOCK" not in key:
         raise ScriptError("public key export failed")
     (repo / "gpg.key").write_text(key, encoding="utf-8")
-    package_version = f"{caddy_version}+custom.{revision}"
+    package_version = f"{caddy_version}+xcaddy.{revision}"
     for deb in debs:
         if deb_field(deb, "Version") != package_version:
             raise ScriptError(f"{deb.name} is not version {package_version}; refusing to sign")

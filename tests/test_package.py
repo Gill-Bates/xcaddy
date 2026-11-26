@@ -30,8 +30,8 @@ def test_elf_arch_rejects_non_elf(tmp_path):
 def test_package_uses_standard_caddy_paths(arch, fake_elf, tmp_path):
     manifest = tmp_path / "m.json"
     manifest.write_text("{}")
-    deb = build_package("2.11.9+custom.2", arch, fake_elf(arch), manifest, tmp_path / "out")
-    assert deb.name == f"xcaddy_2.11.9+custom.2_{arch}.deb"
+    deb = build_package("2.11.9+xcaddy.2", arch, fake_elf(arch), manifest, tmp_path / "out")
+    assert deb.name == f"xcaddy_2.11.9+xcaddy.2_{arch}.deb"
     names = run(["dpkg-deb", "--contents", deb]).stdout
     assert "./usr/bin/caddy\n" in names
     assert "./usr/lib/systemd/system/caddy.service" in names
@@ -58,15 +58,15 @@ def test_wrong_architecture_is_rejected(fake_elf, tmp_path):
     manifest = tmp_path / "m.json"
     manifest.write_text("{}")
     with pytest.raises(ScriptError, match="arm64"):
-        build_package("2.11.9+custom.1", "arm64", fake_elf("amd64"), manifest, tmp_path / "o")
+        build_package("2.11.9+xcaddy.1", "arm64", fake_elf("amd64"), manifest, tmp_path / "o")
 
 
 def test_validation_detects_wrong_version(fake_elf, tmp_path):
     manifest = tmp_path / "m.json"
     manifest.write_text("{}")
-    deb = build_package("2.11.9+custom.1", "amd64", fake_elf("amd64"), manifest, tmp_path / "o")
+    deb = build_package("2.11.9+xcaddy.1", "amd64", fake_elf("amd64"), manifest, tmp_path / "o")
     with pytest.raises(ScriptError, match="Version"):
-        validate_deb(deb, "amd64", "2.11.9+custom.2")
+        validate_deb(deb, "amd64", "2.11.9+xcaddy.2")
 
 
 def test_maintainer_scripts_exist():
@@ -79,9 +79,9 @@ def test_the_same_inputs_build_byte_identical_packages(tmp_path, fake_elf):
 
     manifest = tmp_path / "m.json"
     manifest.write_text("{}")
-    first = build_package("2.11.9+custom.1", "amd64", fake_elf("amd64"), manifest, tmp_path / "a")
+    first = build_package("2.11.9+xcaddy.1", "amd64", fake_elf("amd64"), manifest, tmp_path / "a")
     time.sleep(1.1)
-    second = build_package("2.11.9+custom.1", "amd64", fake_elf("amd64"), manifest, tmp_path / "b")
+    second = build_package("2.11.9+xcaddy.1", "amd64", fake_elf("amd64"), manifest, tmp_path / "b")
     assert first.read_bytes() == second.read_bytes()
 
 
@@ -96,7 +96,7 @@ def test_the_same_inputs_build_byte_identical_packages(tmp_path, fake_elf):
 def test_validation_rejects_paths_that_only_share_a_name_prefix(extra, fake_elf, tmp_path):
     manifest = tmp_path / "m.json"
     manifest.write_text("{}")
-    deb = build_package("2.11.9+custom.1", "amd64", fake_elf("amd64"), manifest, tmp_path / "o")
+    deb = build_package("2.11.9+xcaddy.1", "amd64", fake_elf("amd64"), manifest, tmp_path / "o")
     tree = tmp_path / "tree"
     run(["dpkg-deb", "--raw-extract", deb, tree])
     (tree / extra).parent.mkdir(parents=True, exist_ok=True)
@@ -104,4 +104,4 @@ def test_validation_rejects_paths_that_only_share_a_name_prefix(extra, fake_elf,
     tampered = tmp_path / "tampered.deb"
     run(["dpkg-deb", "--root-owner-group", "--build", tree, tampered])
     with pytest.raises(ScriptError, match="unexpected path"):
-        validate_deb(tampered, "amd64", "2.11.9+custom.1")
+        validate_deb(tampered, "amd64", "2.11.9+xcaddy.1")

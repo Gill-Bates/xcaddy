@@ -18,7 +18,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 VERSION_RE = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
-PACKAGE_VERSION_RE = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+\+custom\.[0-9]+")
+PACKAGE_VERSION_RE = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+\+xcaddy\.[0-9]+")
 __author__ = "xcaddy maintainers"
 HELP_URL = "https://github.com/Gill-Bates/xcaddy#readme"
 ARCHS = ("amd64", "arm64")

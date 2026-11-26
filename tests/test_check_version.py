@@ -42,13 +42,13 @@ def test_first_release_without_state():
     assert (d.should_build, d.reason, d.package_version) == (
         True,
         "first-release",
-        "2.11.9+custom.1",
+        "2.11.9+xcaddy.1",
     )
 
 
 def test_unchanged_is_a_noop_and_keeps_revision():
     d = decide("2.11.9", STATE, "aaa", False, PUBLISHED)
-    assert (d.should_build, d.reason, d.package_version) == (False, "unchanged", "2.11.9+custom.3")
+    assert (d.should_build, d.reason, d.package_version) == (False, "unchanged", "2.11.9+xcaddy.3")
 
 
 def test_new_version_restarts_revision():
@@ -56,15 +56,15 @@ def test_new_version_restarts_revision():
     assert (d.should_build, d.reason, d.package_version) == (
         True,
         "new-version",
-        "2.11.10+custom.1",
+        "2.11.10+xcaddy.1",
     )
 
 
 def test_changed_inputs_and_force_bump_revision():
     changed = decide("2.11.9", STATE, "bbb", False)
-    assert (changed.reason, changed.package_version) == ("config-changed", "2.11.9+custom.4")
+    assert (changed.reason, changed.package_version) == ("config-changed", "2.11.9+xcaddy.4")
     forced = decide("2.11.9", STATE, "aaa", True, PUBLISHED)
-    assert (forced.reason, forced.package_version) == ("forced", "2.11.9+custom.4")
+    assert (forced.reason, forced.package_version) == ("forced", "2.11.9+xcaddy.4")
 
 
 def test_downgrade_and_bad_input_fail():
@@ -77,8 +77,8 @@ def test_downgrade_and_bad_input_fail():
 
 
 def test_revision_scheme_sorts_in_dpkg_order():
-    assert dpkg_compare("2.11.10+custom.1", "gt", "2.11.9+custom.9")
-    assert dpkg_compare("2.11.9+custom.10", "gt", "2.11.9+custom.9")
+    assert dpkg_compare("2.11.10+xcaddy.1", "gt", "2.11.9+xcaddy.9")
+    assert dpkg_compare("2.11.9+xcaddy.10", "gt", "2.11.9+xcaddy.9")
 
 
 def test_inputs_hash_is_stable_sha256():
@@ -147,11 +147,11 @@ def test_decide_cli_accepts_an_already_staged_release(tmp_path, capsys, monkeypa
         "--inputs-hash",
         "aaa",
         "--expect-package-version",
-        "2.11.9+custom.1",
+        "2.11.9+xcaddy.1",
     ]
     monkeypatch.setattr(sys, "argv", argv)
     assert check_version.main() == 0
-    monkeypatch.setattr(sys, "argv", [*argv[:-1], "2.11.9+custom.2"])
+    monkeypatch.setattr(sys, "argv", [*argv[:-1], "2.11.9+xcaddy.2"])
     with pytest.raises(ScriptError, match="state changed"):
         check_version.main()
 
@@ -176,7 +176,7 @@ def run_decide(monkeypatch, tmp_path, state, *extra, status=None):
 def test_forced_rebuild_survives_the_recheck_under_the_release_lock(tmp_path, monkeypatch):
     # The version check and the publish recheck must both see force=true, else the
     # recheck reports "unchanged" and the finished build is thrown away.
-    expected = ("--expect-package-version", "2.11.9+custom.4")
+    expected = ("--expect-package-version", "2.11.9+xcaddy.4")
     run_decide(monkeypatch, tmp_path, STATE, "--force", "true", status=PUBLISHED)
     run_decide(monkeypatch, tmp_path, STATE, "--force", "true", *expected, status=PUBLISHED)
     with pytest.raises(ScriptError, match="state changed"):
@@ -215,7 +215,7 @@ UNCONFIRMED = {"release_id": "r2", "status": "DEPLOYED"}
 def test_an_unconfirmed_stage_is_recovered_not_rebuilt():
     # Deployment failed: apt-repo holds r2 (rev 4), the public repository still serves r1.
     d = decide("2.11.9", STATE, "aaa", False, PUBLISHED, staged=STAGED)
-    assert (d.should_build, d.recover, d.package_version) == (False, True, "2.11.9+custom.4")
+    assert (d.should_build, d.recover, d.package_version) == (False, True, "2.11.9+xcaddy.4")
 
 
 def test_an_unconfirmed_stage_with_new_inputs_gets_the_next_revision(tmp_path, monkeypatch):
@@ -225,13 +225,13 @@ def test_an_unconfirmed_stage_with_new_inputs_gets_the_next_revision(tmp_path, m
     assert (d.should_build, d.reason, d.package_version) == (
         True,
         "config-changed",
-        "2.11.9+custom.5",
+        "2.11.9+xcaddy.5",
     )
     import json
 
     for name, body in (("public", STATE), ("status", PUBLISHED), ("staged", STAGED)):
         (tmp_path / f"{name}.json").write_text(json.dumps(body))
-    for expected in ("2.11.9+custom.5",) * 2:
+    for expected in ("2.11.9+xcaddy.5",) * 2:
         run_decide_cli(
             monkeypatch,
             tmp_path,

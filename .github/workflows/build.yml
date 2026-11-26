@@ -212,7 +212,7 @@ jobs:
         run: |
           chmod +x build/caddy
           # Revision 0 sorts below every real release and serves as the upgrade-test baseline.
-          python3 scripts/package.py build --version "${CADDY_VERSION}+custom.0" --arch "$ARCH" \
+          python3 scripts/package.py build --version "${CADDY_VERSION}+xcaddy.0" --arch "$ARCH" \
             --binary build/caddy --manifest build/build-manifest.json --out baseline
       - name: Install, upgrade, no-op, remove and purge via a signed local repository
         env:
@@ -223,7 +223,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y reprepro
           sudo env "PATH=$PATH" python3 scripts/test.py apt \
-            --old-deb "baseline/xcaddy_${CADDY_VERSION}+custom.0_${ARCH}.deb" \
+            --old-deb "baseline/xcaddy_${CADDY_VERSION}+xcaddy.0_${ARCH}.deb" \
             --new-deb "dist/xcaddy_${PKG_VERSION}_${ARCH}.deb" \
             --allow-host-changes --check-binary
 

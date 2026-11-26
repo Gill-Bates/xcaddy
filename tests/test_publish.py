@@ -53,16 +53,16 @@ def publish_version(repo, fpr, debs, version, revision):
 
 def test_signed_site_verifies_and_noop_rerun(env):
     repo, fpr, debs, tmp = env
-    publish_version(repo, fpr, debs, "2.11.9+custom.1", 1)
+    publish_version(repo, fpr, debs, "2.11.9+xcaddy.1", 1)
     site = tmp / "site"
     publish.export_site(repo, site)
     publish.verify_site(site, fingerprint=fpr)
-    assert not publish.add_packages(repo, debs("2.11.9+custom.1"))
+    assert not publish.add_packages(repo, debs("2.11.9+xcaddy.1"))
 
 
 def test_tampered_metadata_fails_verification(env):
     repo, fpr, debs, tmp = env
-    publish_version(repo, fpr, debs, "2.11.9+custom.1", 1)
+    publish_version(repo, fpr, debs, "2.11.9+xcaddy.1", 1)
     site = tmp / "site"
     publish.export_site(repo, site)
     release = site / "dists/stable/Release"
@@ -73,7 +73,7 @@ def test_tampered_metadata_fails_verification(env):
 
 def test_inrelease_must_match_the_signed_release(env):
     repo, fpr, debs, tmp = env
-    publish_version(repo, fpr, debs, "2.11.9+custom.1", 1)
+    publish_version(repo, fpr, debs, "2.11.9+xcaddy.1", 1)
     site = tmp / "site"
     publish.export_site(repo, site)
     release = site / "dists/stable/Release"
@@ -100,24 +100,24 @@ def test_init_updates_an_existing_repository_configuration(tmp_path, monkeypatch
 
 def test_downgrade_and_missing_arch_are_refused(env):
     repo, fpr, debs, _ = env
-    publish_version(repo, fpr, debs, "2.11.9+custom.2", 2)
+    publish_version(repo, fpr, debs, "2.11.9+xcaddy.2", 2)
     with pytest.raises(ScriptError, match="not newer"):
-        publish.add_packages(repo, debs("2.11.9+custom.1"))
+        publish.add_packages(repo, debs("2.11.9+xcaddy.1"))
     with pytest.raises(ScriptError, match="expected packages"):
-        publish.add_packages(repo, debs("2.11.9+custom.3")[:1])
+        publish.add_packages(repo, debs("2.11.9+xcaddy.3")[:1])
 
 
 def test_upgrade_replaces_old_version_and_files(env):
     repo, fpr, debs, _ = env
-    publish_version(repo, fpr, debs, "2.11.9+custom.1", 1)
-    publish_version(repo, fpr, debs, "2.11.10+custom.1", 1)
-    assert publish.list_versions(repo) == ["2.11.10+custom.1"]
+    publish_version(repo, fpr, debs, "2.11.9+xcaddy.1", 1)
+    publish_version(repo, fpr, debs, "2.11.10+xcaddy.1", 1)
+    assert publish.list_versions(repo) == ["2.11.10+xcaddy.1"]
     assert not list(repo.glob("pool/**/*2.11.9*"))
 
 
 def test_signer_must_match_the_pinned_fingerprint(env):
     repo, fpr, debs, tmp = env
-    publish_version(repo, fpr, debs, "2.11.9+custom.1", 1)
+    publish_version(repo, fpr, debs, "2.11.9+xcaddy.1", 1)
     publish.export_site(repo, tmp / "site")
     publish.verify_site(tmp / "site", fingerprint=fpr)
     with pytest.raises(ScriptError, match="expected key"):
@@ -159,19 +159,19 @@ def test_gnupg_home_outside_a_temporary_root_is_refused_and_never_deleted(monkey
 
 def test_manifest_is_signed_and_by_hash_survives_version_change(env):
     repo, fpr, debs, tmp = env
-    publish_version(repo, fpr, debs, "2.11.9+custom.1", 1)
+    publish_version(repo, fpr, debs, "2.11.9+xcaddy.1", 1)
     site = tmp / "site"
     publish.export_site(repo, site)
     old_hashes = {p.name for p in site.glob("dists/**/by-hash/SHA256/*")}
     assert old_hashes
     assert "Acquire-By-Hash: yes" in (site / "dists/stable/Release").read_text()
-    publish_version(repo, fpr, debs, "2.11.10+custom.1", 1)
+    publish_version(repo, fpr, debs, "2.11.10+xcaddy.1", 1)
     publish.export_site(repo, site)
     publish.verify_site(site, fingerprint=fpr)
     new_hashes = {p.name for p in site.glob("dists/**/by-hash/SHA256/*")}
     assert old_hashes < new_hashes
     manifest = (site / "release-manifest.json").read_text()
-    assert "2.11.10+custom.1" in manifest
+    assert "2.11.10+xcaddy.1" in manifest
     (site / "release-manifest.json").write_text(manifest.replace("2.11.10", "2.99.99"))
     with pytest.raises(ScriptError):
         publish.verify_site(site, fingerprint=fpr)
@@ -179,7 +179,7 @@ def test_manifest_is_signed_and_by_hash_survives_version_change(env):
 
 def test_manifest_is_immutable_and_status_is_separate(env):
     repo, fpr, debs, tmp = env
-    publish_version(repo, fpr, debs, "2.11.9+custom.1", 1)
+    publish_version(repo, fpr, debs, "2.11.9+xcaddy.1", 1)
     manifest = (repo / "release-manifest.json").read_text()
     assert "status" not in manifest
     assert '"DEPLOYED"' in (repo / "release-status.json").read_text()
@@ -199,10 +199,10 @@ def test_manifest_is_immutable_and_status_is_separate(env):
 
 def test_old_metadata_stays_fetchable_by_hash_until_grace_expires(env):
     repo, fpr, debs, tmp = env
-    publish_version(repo, fpr, debs, "2.11.9+custom.1", 1)
+    publish_version(repo, fpr, debs, "2.11.9+xcaddy.1", 1)
     cached = {p.relative_to(repo): p.read_bytes() for p in repo.glob("dists/**/by-hash/SHA256/*")}
     assert cached
-    publish_version(repo, fpr, debs, "2.11.10+custom.1", 1)
+    publish_version(repo, fpr, debs, "2.11.10+xcaddy.1", 1)
     for rel, data in cached.items():
         assert (repo / rel).read_bytes() == data
     later = time.time() + (publish.BY_HASH_GRACE_DAYS + 1) * 86400
@@ -216,15 +216,15 @@ def test_old_metadata_stays_fetchable_by_hash_until_grace_expires(env):
 
 def test_publish_is_idempotent(env):
     repo, fpr, debs, _ = env
-    publish_version(repo, fpr, debs, "2.11.9+custom.1", 1)
+    publish_version(repo, fpr, debs, "2.11.9+xcaddy.1", 1)
     before = (repo / "release-manifest.json").read_text()
-    assert not publish.add_packages(repo, debs("2.11.9+custom.1"))
+    assert not publish.add_packages(repo, debs("2.11.9+xcaddy.1"))
     assert (repo / "release-manifest.json").read_text() == before
 
 
 def test_public_key_is_armored_and_matches_signer(env):
     repo, fpr, debs, _ = env
-    publish_version(repo, fpr, debs, "2.11.9+custom.1", 1)
+    publish_version(repo, fpr, debs, "2.11.9+xcaddy.1", 1)
     key = (repo / "gpg.key").read_text()
     assert key.startswith("-----BEGIN PGP PUBLIC KEY BLOCK-----")
     assert "PRIVATE" not in key
@@ -235,7 +235,7 @@ def test_public_key_is_armored_and_matches_signer(env):
 def served(env, monkeypatch):
     """A published site served to verify_url by a fake downloader."""
     repo, fpr, debs, tmp = env
-    publish_version(repo, fpr, debs, "2.11.9+custom.1", 1)
+    publish_version(repo, fpr, debs, "2.11.9+xcaddy.1", 1)
     site = tmp / "site"
     publish.export_site(repo, site)
     requested: list[str] = []
@@ -328,7 +328,7 @@ def test_verify_site_pins_the_signer(served):
 
 def test_apt_key_is_installed_with_the_extension_apt_requires(env):
     repo, fpr, debs, tmp = env
-    publish_version(repo, fpr, debs, "2.11.9+custom.1", 1)
+    publish_version(repo, fpr, debs, "2.11.9+xcaddy.1", 1)
     key = publish.install_apt_key(repo / "gpg.key", tmp / "keyrings")
     assert key.suffix == ".asc"
     assert key.read_bytes() == (repo / "gpg.key").read_bytes()
@@ -375,8 +375,8 @@ def _by_hash_package_entries(site):
 
 def test_every_package_named_by_a_retained_index_stays_downloadable(env):
     repo, fpr, debs, tmp = env
-    publish_version(repo, fpr, debs, "2.11.9+custom.1", 1)
-    publish_version(repo, fpr, debs, "2.11.10+custom.1", 1)
+    publish_version(repo, fpr, debs, "2.11.9+xcaddy.1", 1)
+    publish_version(repo, fpr, debs, "2.11.10+xcaddy.1", 1)
     site = tmp / "site"
     publish.export_site(repo, site)
     entries = _by_hash_package_entries(site)
@@ -389,8 +389,8 @@ def test_every_package_named_by_a_retained_index_stays_downloadable(env):
 
 def test_retained_packages_are_dropped_with_their_indexes_after_the_grace_period(env):
     repo, fpr, debs, tmp = env
-    publish_version(repo, fpr, debs, "2.11.9+custom.1", 1)
-    publish_version(repo, fpr, debs, "2.11.10+custom.1", 1)
+    publish_version(repo, fpr, debs, "2.11.9+xcaddy.1", 1)
+    publish_version(repo, fpr, debs, "2.11.10+xcaddy.1", 1)
     later = time.time() + (publish.BY_HASH_GRACE_DAYS + 1) * 86400
     publish.add_by_hash(repo, fpr, now=later)
     publish.add_by_hash(repo, fpr, now=later + 1)
@@ -403,12 +403,12 @@ def test_same_version_with_different_package_bytes_is_refused(env, fake_elf):
     from package import build_package
 
     repo, fpr, debs, tmp = env
-    publish_version(repo, fpr, debs, "2.11.9+custom.1", 1)
+    publish_version(repo, fpr, debs, "2.11.9+xcaddy.1", 1)
     other = fake_elf("amd64", "other")
     other.write_bytes(other.read_bytes() + b"changed")
     changed = [
-        build_package("2.11.9+custom.1", "amd64", other, tmp / "m.json", tmp / "changed"),
-        debs("2.11.9+custom.1")[1],
+        build_package("2.11.9+xcaddy.1", "amd64", other, tmp / "m.json", tmp / "changed"),
+        debs("2.11.9+xcaddy.1")[1],
     ]
     with pytest.raises(ScriptError, match="different package bytes"):
         publish.add_packages(repo, changed)
@@ -416,7 +416,7 @@ def test_same_version_with_different_package_bytes_is_refused(env, fake_elf):
 
 def test_an_architecture_missing_for_a_published_version_is_added(env):
     repo, fpr, debs, tmp = env
-    built = debs("2.11.9+custom.1")
+    built = debs("2.11.9+xcaddy.1")
     # simulate an interrupted run: only amd64 made it into the repository
     publish.reprepro(repo, "includedeb", publish.CODENAME, built[0])
     assert publish.add_packages(repo, built)
@@ -638,29 +638,29 @@ def test_the_trigger_check_detects_a_run_that_can_start_elsewhere(mutation):
 
 def test_verify_state_binds_the_state_to_the_expected_release(env):
     repo, fpr, debs, tmp = env
-    publish_version(repo, fpr, debs, "2.11.9+custom.1", 1)
+    publish_version(repo, fpr, debs, "2.11.9+xcaddy.1", 1)
     manifest = publish.verify_state(repo, fpr)
     publish.verify_state(repo, fpr, manifest["release_id"], manifest["package_version"])
     with pytest.raises(ScriptError, match="expected"):
         publish.verify_state(repo, fpr, release_id="0" * 16)
     with pytest.raises(ScriptError, match="expected 2.11.10"):
-        publish.verify_state(repo, fpr, package_version="2.11.10+custom.1")
+        publish.verify_state(repo, fpr, package_version="2.11.10+xcaddy.1")
 
 
 def test_a_state_rolled_back_to_an_older_signed_release_is_refused(env):
     repo, fpr, debs, tmp = env
-    publish_version(repo, fpr, debs, "2.11.9+custom.1", 1)
+    publish_version(repo, fpr, debs, "2.11.9+xcaddy.1", 1)
     older = tmp / "older"
     shutil.copytree(repo, older, ignore=shutil.ignore_patterns("db", "pool", "dists"))
-    publish_version(repo, fpr, debs, "2.11.10+custom.1", 1)
+    publish_version(repo, fpr, debs, "2.11.10+xcaddy.1", 1)
     # the apt-repo branch was reset: it validly signs 2.11.9 while 2.11.10 is expected
     with pytest.raises(ScriptError, match="expected 2.11.10"):
-        publish.verify_state(older, fpr, package_version="2.11.10+custom.1")
+        publish.verify_state(older, fpr, package_version="2.11.10+xcaddy.1")
 
 
 def test_a_status_of_another_release_is_refused(env):
     repo, fpr, debs, tmp = env
-    publish_version(repo, fpr, debs, "2.11.9+custom.1", 1)
+    publish_version(repo, fpr, debs, "2.11.9+xcaddy.1", 1)
     status = repo / "release-status.json"
     status.write_text(json.dumps({"release_id": "0" * 16, "status": "PUBLISHED"}))
     publish._detached(status, repo / "release-status.json.asc", fpr)
@@ -670,9 +670,9 @@ def test_a_status_of_another_release_is_refused(env):
 
 def test_finalize_refuses_a_package_of_another_version(env):
     repo, fpr, debs, _ = env
-    built = debs("2.11.9+custom.0")
+    built = debs("2.11.9+xcaddy.0")
     publish.add_packages(repo, built)
-    with pytest.raises(ScriptError, match="not version 2.11.9\\+custom.1"):
+    with pytest.raises(ScriptError, match="not version 2.11.9\\+xcaddy.1"):
         publish.finalize(repo, fpr, "2.11.9", 1, "hash", built)
     assert not (repo / "release-manifest.json").exists()
 

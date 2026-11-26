@@ -83,11 +83,11 @@ jobs:
           sudo apt-get install -y reprepro
           version=$(python3 scripts/check_version.py latest | tail -n 1)
           python3 scripts/build.py --caddy-version "$version" --arch "$ARCH" --out build
-          python3 scripts/package.py build --version "${version}+custom.1" --arch "$ARCH" \
+          python3 scripts/package.py build --version "${version}+xcaddy.1" --arch "$ARCH" \
             --binary build/caddy --manifest build/build-manifest.json --out dist
-          python3 scripts/package.py build --version "${version}+custom.0" --arch "$ARCH" \
+          python3 scripts/package.py build --version "${version}+xcaddy.0" --arch "$ARCH" \
             --binary build/caddy --manifest build/build-manifest.json --out baseline
           sudo env "PATH=$PATH" python3 scripts/test.py apt \
-            --old-deb "baseline/xcaddy_${version}+custom.0_${ARCH}.deb" \
-            --new-deb "dist/xcaddy_${version}+custom.1_${ARCH}.deb" \
+            --old-deb "baseline/xcaddy_${version}+xcaddy.0_${ARCH}.deb" \
+            --new-deb "dist/xcaddy_${version}+xcaddy.1_${ARCH}.deb" \
             --allow-host-changes --check-binary

@@ -42,7 +42,7 @@ github.com/mholt/caddy-ratelimit@v0.1.0
 ```
 
 Validate locally: `python3 scripts/plugins.py validate`. Entries are matched against a strict
-pattern and passed to xcaddy as list arguments, never to a shell. `config/plugins.lock` pins the resolved versions and h1 checksums; builds use only the lock. After editing `plugins.txt` run `python3 scripts/lock.py update` (or the maintainers update the lock in a pull request). Any change of the lock or the build inputs triggers a build with the next revision (`2.x.y+custom.N`). The Caddy module IDs a plugin registers are read from its sources into the lock; the build fails if `caddy list-modules` lacks them.
+pattern and passed to xcaddy as list arguments, never to a shell. `config/plugins.lock` pins the resolved versions and h1 checksums; builds use only the lock. After editing `plugins.txt` run `python3 scripts/lock.py update` (or the maintainers update the lock in a pull request). Any change of the lock or the build inputs triggers a build with the next revision (`2.x.y+xcaddy.N`). The Caddy module IDs a plugin registers are read from its sources into the lock; the build fails if `caddy list-modules` lacks them.
 
 ## 3. Manual build
 
@@ -50,7 +50,7 @@ Needs Go and xcaddy (versions in `scripts/toolchain.py`) on a host of the target
 
 ```bash
 python3 scripts/build.py --caddy-version 2.11.9 --arch amd64 --out build
-python3 scripts/package.py build --version 2.11.9+custom.1 --arch amd64 \
+python3 scripts/package.py build --version 2.11.9+xcaddy.1 --arch amd64 \
   --binary build/caddy --manifest build/build-manifest.json --out dist
 ```
 
