@@ -156,9 +156,7 @@ def validate_deb(deb: Path, arch: str, version: str) -> None:
                 problems.append(f"maintainer script {name} missing or not executable")
             elif run(["sh", "-n", script], check=False).returncode != 0:
                 problems.append(f"maintainer script {name} has a syntax error")
-        if (ctrl / "conffiles").read_text(encoding="utf-8").split() != [
-            "/etc/caddy/Caddyfile"
-        ]:
+        if (ctrl / "conffiles").read_text(encoding="utf-8").split() != ["/etc/caddy/Caddyfile"]:
             problems.append("conffiles must list exactly /etc/caddy/Caddyfile")
     if problems:
         raise ScriptError("package validation failed:\n" + "\n".join(problems))

@@ -33,7 +33,7 @@ def test_package_uses_standard_caddy_paths(arch, fake_elf, tmp_path):
     deb = build_package("2.11.9+custom.2", arch, fake_elf(arch), manifest, tmp_path / "out")
     assert deb.name == f"xcaddy_2.11.9+custom.2_{arch}.deb"
     names = run(["dpkg-deb", "--contents", deb]).stdout
-    assert "./usr/bin/caddy " in names
+    assert "./usr/bin/caddy\n" in names
     assert "./usr/lib/systemd/system/caddy.service" in names
     assert "./etc/caddy/Caddyfile" in names
     fields = run(["dpkg-deb", "--field", deb]).stdout
@@ -41,6 +41,17 @@ def test_package_uses_standard_caddy_paths(arch, fake_elf, tmp_path):
     assert "Provides: caddy" in fields
     assert "Conflicts: caddy" in fields
     assert "Replaces: caddy" in fields
+    unpacked = tmp_path / "unpacked"
+    run(["dpkg-deb", "--extract", deb, unpacked])
+    service = (unpacked / "usr/lib/systemd/system/caddy.service").read_text()
+    assert "User=caddy" in service
+    assert "Group=caddy" in service
+    assert "ProtectSystem=full" in service
+    assert "ProtectHome" not in service
+    assert "XDG_DATA_HOME" not in service
+    caddyfile = (unpacked / "etc/caddy/Caddyfile").read_text()
+    assert ":80 {" in caddyfile
+    assert "2020" not in caddyfile
 
 
 def test_wrong_architecture_is_rejected(fake_elf, tmp_path):

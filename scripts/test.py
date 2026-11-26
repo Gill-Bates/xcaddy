@@ -9,8 +9,11 @@
 from __future__ import annotations
 
 import argparse
+import grp
 import json
 import os
+import pwd
+import stat
 import tempfile
 from pathlib import Path
 
@@ -47,6 +50,14 @@ def check_installed(version: str, check_binary: bool) -> None:
     expect(Path("/usr/bin/caddy").is_file(), "binary installed")
     expect(Path("/etc/caddy/Caddyfile").is_file(), "config installed")
     expect(run(["getent", "passwd", "caddy"], check=False).returncode == 0, "caddy user exists")
+    owner, group = pwd.getpwnam("caddy"), grp.getgrnam("caddy")
+    data_stat = Path("/var/lib/caddy").stat()
+    expect(
+        (data_stat.st_uid, data_stat.st_gid, stat.S_IMODE(data_stat.st_mode))
+        == (owner.pw_uid, group.gr_gid, 0o750),
+        "Caddy data directory has standard ownership and permissions",
+    )
+    expect("www-data" in run(["id", "-Gn", "caddy"]).stdout.split(), "caddy belongs to www-data")
     if check_binary:
         run(["/usr/bin/caddy", "validate", "--config", "/etc/caddy/Caddyfile"])
         log("info", "ok: xcaddy validates the default Caddyfile")
@@ -168,16 +179,16 @@ def apt_flow(old_deb: Path, new_deb: Path, check_binary: bool) -> None:
             check_installed(old_v, check_binary)
             expect(
                 Path("/etc/caddy/Caddyfile").read_text(encoding="utf-8") == legacy_config,
-                "official Caddyfile is unchanged after replacement",
+                "legacy Caddyfile is unchanged after replacement",
             )
             expect(
                 Path("/var/lib/caddy/migration-marker").read_text(encoding="utf-8")
                 == "keep this data\n",
-                "official Caddy data is unchanged after replacement",
+                "legacy Caddy data is unchanged after replacement",
             )
             expect(
                 run(["dpkg-query", "-W", "-f=${Status}", "caddy"], check=False).returncode != 0,
-                "official caddy package is removed",
+                "legacy caddy package is replaced",
             )
             expect(publish_deb(new_deb, new_v), "newer version published")
             # stale lists and an empty archive cache: the old index must still resolve to a file
@@ -194,7 +205,7 @@ def apt_flow(old_deb: Path, new_deb: Path, check_binary: bool) -> None:
             apt("purge", NAME)
             expect(not Path("/etc/caddy").exists(), "config removed on purge")
             expect(not Path("/var/lib/caddy").exists(), "data removed on purge")
-            gone = run(["getent", "passwd", NAME], check=False).returncode != 0
+            gone = run(["getent", "passwd", "caddy"], check=False).returncode != 0
             expect(gone, "service user removed on purge")
         finally:
             publish.cleanup_keyring()

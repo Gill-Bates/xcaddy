@@ -5,8 +5,11 @@ set -e
 
 case "$1" in
 configure)
+    if ! getent group caddy >/dev/null; then
+        addgroup --system caddy
+    fi
     if ! getent passwd caddy >/dev/null; then
-        adduser --system --group --home /var/lib/caddy --shell /usr/sbin/nologin caddy
+        adduser --system --ingroup caddy --home /var/lib/caddy --shell /usr/sbin/nologin caddy
     fi
     usermod -aG www-data caddy
     install -d -o caddy -g caddy -m 0750 /var/lib/caddy

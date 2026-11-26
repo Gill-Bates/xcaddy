@@ -23,9 +23,7 @@ def test_purge_stays_inside_package_directories(tmp_path):
     (data / "cert.pem").write_text("tls identity")
     (conf / "Caddyfile").write_text("x")
     script = (repo_root() / "packaging/postrm").read_text()
-    script = script.replace("/var/lib/caddy", str(data)).replace(
-        "/etc/caddy", str(conf)
-    )
+    script = script.replace("/var/lib/caddy", str(data)).replace("/etc/caddy", str(conf))
     patched = tmp_path / "postrm"
     patched.write_text(script)
     sh = shutil.which("sh")
@@ -38,9 +36,7 @@ def test_purge_stays_inside_package_directories(tmp_path):
 
 def _patched_postrm(tmp_path, data, conf):
     script = (repo_root() / "packaging/postrm").read_text()
-    script = script.replace("/var/lib/caddy", str(data)).replace(
-        "/etc/caddy", str(conf)
-    )
+    script = script.replace("/var/lib/caddy", str(data)).replace("/etc/caddy", str(conf))
     patched = tmp_path / "postrm"
     patched.write_text(script)
     return patched
@@ -153,9 +149,7 @@ def test_purge_leaves_a_package_directory_with_a_nested_mount_untouched(tmp_path
 def test_remove_keeps_configuration_and_data(tmp_path):
     data = tmp_path / "lib"
     data.mkdir()
-    script = (
-        (repo_root() / "packaging/postrm").read_text().replace("/var/lib/caddy", str(data))
-    )
+    script = (repo_root() / "packaging/postrm").read_text().replace("/var/lib/caddy", str(data))
     patched = tmp_path / "postrm"
     patched.write_text(script)
     subprocess.run([shutil.which("sh"), str(patched), "remove"], check=True)
@@ -182,7 +176,7 @@ def postinst(tmp_path):
         "getent": "exit 0",
         "install": 'for last; do :; done; mkdir -p "$last"',
         "systemctl": "exit 0",
-        "usermod": "exit 0",
+        "usermod": f'echo "usermod $@" >> "{log}"',
         "caddy": "exit 0",
         "deb-systemd-invoke": f'echo "$@" >> "{log}"',
     }
@@ -233,7 +227,9 @@ def test_first_install_enables_the_service(postinst, systemd_running):
 def test_first_install_starts_the_service_when_systemd_runs(postinst):
     run, _, log = postinst
     run(systemd_running=True)
-    assert "start caddy.service" in log.read_text()
+    calls = log.read_text()
+    assert "usermod -aG www-data caddy" in calls
+    assert "start caddy.service" in calls
 
 
 def test_upgrade_keeps_an_enabled_service_enabled(postinst):
