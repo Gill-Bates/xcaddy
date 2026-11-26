@@ -4,7 +4,7 @@
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
 #
 
-"""Build Caddy with the plugins of config/plugins.txt via xcaddy and verify the result."""
+"""Build Caddy with the modules of config/modules.txt via xcaddy and verify the result."""
 
 from __future__ import annotations
 
@@ -28,8 +28,8 @@ from common import (
     run_main,
     sha256_file,
 )
-from lock import load_lock, locked_plugins
-from plugins import load_plugins
+from lock import load_lock, locked_modules
+from modules import load_modules
 
 
 def locked_args(rows: list[dict[str, Any]]) -> list[str]:
@@ -84,7 +84,7 @@ def verify_lock(deps: dict[str, tuple[str, str]], rows: list[dict[str, Any]]) ->
     for row in rows:
         got = deps.get(row["module"])
         if got is None:
-            raise ScriptError(f"plugin {row['module']} is not in the binary's build info")
+            raise ScriptError(f"module {row['module']} is not in the binary's build info")
         if got != (row["version"], row["sum"]):
             raise ScriptError(f"{row['module']} built as {got}, lock says {row['version']}")
 
@@ -123,7 +123,7 @@ def write_manifest(binary: Path, arch: str, version: str, rows: list[dict[str, A
         "build_fingerprint": build_fingerprint(version, ihash),
         "source_commit": os.environ.get("GITHUB_SHA", "unknown"),
         "binary_sha256": sha256_file(binary),
-        "plugins": [{k: r[k] for k in ("module", "requested", "version", "sum")} for r in rows],
+        "modules": [{k: r[k] for k in ("module", "requested", "version", "sum")} for r in rows],
         "module_graph": [
             {"module": m, "version": v, "sum": s} for m, (v, s) in sorted(deps.items())
         ],
@@ -138,18 +138,18 @@ def main() -> int:
     parser.add_argument("--caddy-version", required=True)
     parser.add_argument("--arch", required=True, choices=ARCHS)
     parser.add_argument("--out", required=True, type=Path)
-    parser.add_argument("--plugins-file", type=Path)
+    parser.add_argument("--modules-file", type=Path)
     parser.add_argument("--lock-file", type=Path)
     ns = parser.parse_args()
     if not VERSION_RE.fullmatch(ns.caddy_version):
         raise ScriptError(f"invalid --caddy-version {ns.caddy_version!r}")
     require_tools("xcaddy", "go")
     root = repo_root()
-    entries = load_plugins(ns.plugins_file or root / "config/plugins.txt")
-    rows = locked_plugins(entries, load_lock(ns.lock_file or root / "config/plugins.lock"))
+    entries = load_modules(ns.modules_file or root / "config/modules.txt")
+    rows = locked_modules(entries, load_lock(ns.lock_file or root / "config/modules.lock"))
     ns.out.mkdir(parents=True, exist_ok=True)
     binary = ns.out / "caddy"
-    print(f"Building Caddy v{ns.caddy_version} for linux/{ns.arch}, {len(rows)} locked plugins")
+    print(f"Building Caddy v{ns.caddy_version} for linux/{ns.arch}, {len(rows)} locked modules")
     env = {**os.environ, "GOOS": "linux", "GOARCH": ns.arch, "CGO_ENABLED": "0"}
     run(
         [

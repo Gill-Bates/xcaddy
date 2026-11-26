@@ -15,7 +15,7 @@ from build import (
     verify_lock,
 )
 from common import ScriptError
-from lock import locked_plugins
+from lock import locked_modules
 
 ROWS = [
     {
@@ -77,25 +77,25 @@ def test_build_applies_all_pinned_dependency_replacements():
 
 def test_stale_lock_is_rejected():
     lock = {
-        "plugins": [
+        "modules": [
             {**ROWS[0], "requested": "github.com/a/rate"},
             {**ROWS[1], "requested": "github.com/b/bouncer@v0.15.0"},
         ]
     }
-    assert len(locked_plugins(["github.com/a/rate", "github.com/b/bouncer@v0.15.0"], lock)) == 2
+    assert len(locked_modules(["github.com/a/rate", "github.com/b/bouncer@v0.15.0"], lock)) == 2
     with pytest.raises(ScriptError, match="stale"):
-        locked_plugins(["github.com/a/rate"], lock)
+        locked_modules(["github.com/a/rate"], lock)
     with pytest.raises(ScriptError, match="pins"):
-        locked_plugins(["github.com/a/rate@v0.2.0", "github.com/b/bouncer"], lock)
+        locked_modules(["github.com/a/rate@v0.2.0", "github.com/b/bouncer"], lock)
 
 
 def test_changed_commit_pin_rejects_a_lock_for_an_older_request():
     old_commit = "0123456789abcdef0123456789abcdef01234567"
     new_commit = "abcdef0123456789abcdef0123456789abcdef01"
-    lock = {"plugins": [{**ROWS[0], "requested": f"github.com/a/rate@{old_commit}"}]}
+    lock = {"modules": [{**ROWS[0], "requested": f"github.com/a/rate@{old_commit}"}]}
 
     with pytest.raises(ScriptError, match="request.*stale"):
-        locked_plugins([f"github.com/a/rate@{new_commit}"], lock)
+        locked_modules([f"github.com/a/rate@{new_commit}"], lock)
 
 
 def test_sbom_lists_every_module():

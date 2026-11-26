@@ -4,7 +4,7 @@
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
 #
 
-"""Resolve config/plugins.txt to config/plugins.lock (versions, h1 checksums, Caddy module IDs)."""
+"""Resolve config/modules.txt to config/modules.lock (versions, h1 checksums, Caddy module IDs)."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from common import ScriptError, repo_root, run_main
-from plugins import load_plugins
+from modules import load_modules
 
 PROXY = "https://proxy.golang.org"
 MAX_ZIP = 100 * 1024 * 1024
@@ -113,29 +113,29 @@ def load_lock(path: Path) -> dict[str, Any]:
         raise ScriptError(
             f"cannot read lock file {path}: {exc}; run scripts/lock.py update"
         ) from exc
-    if not isinstance(data, dict) or not isinstance(data.get("plugins"), list):
+    if not isinstance(data, dict) or not isinstance(data.get("modules"), list):
         raise ScriptError(f"{path} is not a valid lock file")
     return data
 
 
-def locked_plugins(entries: list[str], lock: dict[str, Any]) -> list[dict[str, Any]]:
-    """Return the lock rows for entries; fail when the lock does not match plugins.txt."""
-    by_module = {row["module"]: row for row in lock["plugins"]}
+def locked_modules(entries: list[str], lock: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return the lock rows for entries; fail when the lock does not match modules.txt."""
+    by_module = {row["module"]: row for row in lock["modules"]}
     wanted = {e.split("@", 1)[0]: e for e in entries}
     if set(by_module) != set(wanted):
-        raise ScriptError("plugins.lock is stale (plugin set differs); run scripts/lock.py update")
+        raise ScriptError("modules.lock is stale (module set differs); run scripts/lock.py update")
     rows = []
     for module, entry in wanted.items():
         row = by_module[module]
         pinned = entry.partition("@")[2]
         if pinned and not COMMIT_RE.fullmatch(pinned) and row.get("version") != pinned:
-            raise ScriptError(f"plugins.lock pins {module} at {row['version']}, not {pinned}")
+            raise ScriptError(f"modules.lock pins {module} at {row['version']}, not {pinned}")
         if row.get("requested") != entry:
             raise ScriptError(
-                f"plugins.lock request for {module} is stale; run scripts/lock.py update"
+                f"modules.lock request for {module} is stale; run scripts/lock.py update"
             )
         if not str(row.get("sum", "")).startswith("h1:"):
-            raise ScriptError(f"plugins.lock has no checksum for {module}")
+            raise ScriptError(f"modules.lock has no checksum for {module}")
         rows.append(row)
     return rows
 
@@ -143,20 +143,20 @@ def locked_plugins(entries: list[str], lock: dict[str, Any]) -> list[dict[str, A
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=["update", "check"])
-    parser.add_argument("--plugins-file", type=Path, default=repo_root() / "config/plugins.txt")
-    parser.add_argument("--lock-file", type=Path, default=repo_root() / "config/plugins.lock")
+    parser.add_argument("--modules-file", type=Path, default=repo_root() / "config/modules.txt")
+    parser.add_argument("--lock-file", type=Path, default=repo_root() / "config/modules.lock")
     ns = parser.parse_args()
-    entries = load_plugins(ns.plugins_file)
+    entries = load_modules(ns.modules_file)
     if ns.command == "check":
-        locked_plugins(entries, load_lock(ns.lock_file))
-        print("plugins.lock matches plugins.txt")
+        locked_modules(entries, load_lock(ns.lock_file))
+        print("modules.lock matches modules.txt")
         return 0
     rows = []
     for entry in entries:
         row = resolve(entry)
         print(f"locked {row['module']} {row['version']} {row['sum']} ids={row['module_ids_any']}")
         rows.append(row)
-    ns.lock_file.write_text(json.dumps({"version": 1, "plugins": rows}, indent=2) + "\n")
+    ns.lock_file.write_text(json.dumps({"version": 1, "modules": rows}, indent=2) + "\n")
     return 0
 
 

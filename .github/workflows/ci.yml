@@ -33,8 +33,10 @@ jobs:
           echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
       - run: ruff check .
       - run: ruff format --check .
-      - name: Plugin list
-        run: python3 scripts/plugins.py validate
+      - name: Module list
+        run: python3 scripts/modules.py validate
+      - name: Modules are registered in the official Caddy module registry
+        run: python3 scripts/modules.py check-registry
       - run: pytest -q
 
   shell-and-workflows:

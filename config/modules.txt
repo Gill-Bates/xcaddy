@@ -1,4 +1,4 @@
-# One Caddy plugin per line: github.com/owner/repository[@version]
+# One Caddy module per line: github.com/owner/repository[@version]
 # Without @version the latest release is built; pin with @vX.Y.Z or a 40-char commit.
 github.com/hslatman/caddy-crowdsec-bouncer
 github.com/mholt/caddy-ratelimit

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "plugins": [
+  "modules": [
     {
       "module": "github.com/hslatman/caddy-crowdsec-bouncer",
       "requested": "github.com/hslatman/caddy-crowdsec-bouncer",

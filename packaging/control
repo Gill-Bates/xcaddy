@@ -10,6 +10,6 @@ Replaces: caddy
 Section: httpd
 Priority: optional
 Homepage: https://github.com/Gill-Bates/xcaddy
-Description: Caddy web server with additional plugins (custom build)
- Plugin-extended Caddy web server built with xcaddy. It replaces the
+Description: Caddy web server with additional modules (custom build)
+ Module-extended Caddy web server built with xcaddy. It replaces the
  official caddy package while retaining its binary, service and data paths.

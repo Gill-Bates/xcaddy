@@ -73,7 +73,9 @@ jobs:
         env:
           KEY_ID: ${{ vars.APT_GPG_KEY_ID }}
         run: python3 scripts/publish.py fetch-public "$PUBLIC_URL" --out published --fingerprint "$KEY_ID"
-      - name: Plugin lock matches the plugin list
+      - name: Modules are registered in the official Caddy module registry
+        run: python3 scripts/modules.py check-registry
+      - name: Module lock matches the module list
         run: python3 scripts/lock.py check
       - name: Latest stable Caddy version
         id: latest

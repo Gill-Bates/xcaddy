@@ -30,10 +30,10 @@
             "labels": ["dependencies", "breaking-change"]
         },
         {
-            "description": "Plugin pins in config/plugins.txt are reviewed because they change the shipped binary",
-            "matchFileNames": ["config/plugins.txt"],
+            "description": "Module pins in config/modules.txt are reviewed because they change the shipped binary",
+            "matchFileNames": ["config/modules.txt"],
             "automerge": false,
-            "labels": ["dependencies", "plugin"]
+            "labels": ["dependencies", "module"]
         }
     ],
     "customManagers": [
@@ -47,8 +47,8 @@
         },
         {
             "customType": "regex",
-            "description": "Pinned plugin versions in config/plugins.txt",
-            "managerFilePatterns": ["/^config/plugins\\.txt$/"],
+            "description": "Pinned module versions in config/modules.txt",
+            "managerFilePatterns": ["/^config/modules\\.txt$/"],
             "matchStrings": [
                 "^(?<depName>github\\.com/[^/@\\s]+/[^/@\\s]+)@(?<currentValue>v[0-9][^\\s#]*)"
             ],

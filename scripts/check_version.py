@@ -30,7 +30,7 @@ from common import (
     set_output,
     write_summary,
 )
-from plugins import load_plugins
+from modules import load_modules
 
 API_URL = "https://api.github.com/repos/caddyserver/caddy/releases?per_page=50"
 TAG_RE = r"v[0-9]+\.[0-9]+\.[0-9]+"
@@ -86,9 +86,9 @@ def inputs_hash(root: Path) -> str:
         "scripts/build.py",
         "scripts/package.py",
         "scripts/common.py",
-        "scripts/plugins.py",
+        "scripts/modules.py",
         "scripts/lock.py",
-        "config/plugins.lock",
+        "config/modules.lock",
         "apt/conf/distributions",
     ]
     files += sorted(
@@ -101,7 +101,7 @@ def inputs_hash(root: Path) -> str:
         except OSError as exc:
             raise ScriptError(f"cannot read {name}: {exc}") from exc
         digest.update(f"{name}\0{hashlib.sha256(content).hexdigest()}\n".encode())
-    digest.update("\n".join(load_plugins(root / "config/plugins.txt")).encode() + b"\0")
+    digest.update("\n".join(load_modules(root / "config/modules.txt")).encode() + b"\0")
     toolchain_pins = (
         toolchain.XCADDY_VERSION,
         toolchain.GO_VERSION,

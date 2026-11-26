@@ -63,17 +63,17 @@ def check_installed(version: str, check_binary: bool) -> None:
         log("info", "ok: xcaddy validates the default Caddyfile")
         modules = set(run(["/usr/bin/caddy", "list-modules"]).stdout.splitlines())
         lock = json.loads(
-            (Path(__file__).resolve().parent.parent / "config/plugins.lock").read_text(
+            (Path(__file__).resolve().parent.parent / "config/modules.lock").read_text(
                 encoding="utf-8"
             )
         )
-        for plugin in lock["plugins"]:
-            required = set(plugin["module_ids"])
-            alternatives = set(plugin["module_ids_any"])
-            expect(required <= modules, f"required modules are present for {plugin['module']}")
+        for module in lock["modules"]:
+            required = set(module["module_ids"])
+            alternatives = set(module["module_ids_any"])
+            expect(required <= modules, f"required modules are present for {module['module']}")
             expect(
                 not alternatives or bool(alternatives & modules),
-                f"plugin module is present for {plugin['module']}",
+                f"module ID is present for {module['module']}",
             )
     if systemd_running():
         expect(

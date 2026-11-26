@@ -1,6 +1,6 @@
 # xcaddy
 
-Daily-checked, plugin-extended Caddy as the Debian package `xcaddy`, built with xcaddy on
+Daily-checked, module-extended Caddy as the Debian package `xcaddy`, built with xcaddy on
 GitHub-hosted runners and served from a GPG-signed APT repository on GitHub Pages:
 `https://gill-bates.github.io/xcaddy/`.
 
@@ -16,7 +16,7 @@ check-version -> build (amd64, arm64) -> package -> install-test, trivy-scan
   -> prepare-apt-repository -> sign-and-publish -> deploy-pages -> verify-publication
 ```
 
-- `check-version` compares the latest stable Caddy release and a hash of the build inputs (plugin list,
+- `check-version` compares the latest stable Caddy release and a hash of the build inputs (module list,
   build and packaging files, Go and xcaddy versions) with the public `release-manifest.json`.
   Nothing changed: the run ends successfully with "No new version".
 - Publishing needs both architectures, passing tests, a passing Trivy gate and valid packages.
@@ -36,9 +36,9 @@ check-version -> build (amd64, arm64) -> package -> install-test, trivy-scan
 Runners: `ubuntu-26.04` and `ubuntu-26.04-arm` (labels listed in the runner-images README; `actionlint`
 needs `.github/actionlint.yaml` for them).
 
-## 2. Plugins
+## 2. Modules
 
-`config/plugins.txt`, one entry per line: `github.com/owner/repo[/vN][@version]`; `#` starts a comment.
+`config/modules.txt`, one entry per line: `github.com/owner/repo[/vN][@version]`; `#` starts a comment.
 `@version` is `vX.Y.Z` or a 40-character commit.
 
 ```text
@@ -46,8 +46,8 @@ github.com/caddy-dns/cloudflare
 github.com/mholt/caddy-ratelimit@v0.1.0
 ```
 
-Validate locally: `python3 scripts/plugins.py validate`. Entries are matched against a strict
-pattern and passed to xcaddy as list arguments, never to a shell. `config/plugins.lock` pins the resolved versions and h1 checksums; builds use only the lock. After editing `plugins.txt` run `python3 scripts/lock.py update` (or the maintainers update the lock in a pull request). Any change of the lock or the build inputs triggers a build with the next revision (`2.x.y+xcaddy.N`). The Caddy module IDs a plugin registers are read from its sources into the lock; the build fails if `caddy list-modules` lacks them.
+Validate locally: `python3 scripts/modules.py validate`; `python3 scripts/modules.py check-registry` additionally requires every entry to be a listed package of the official [Caddy module registry](https://caddyserver.com/docs/modules) (`https://caddyserver.com/api/packages`) and fails when the registry is unreachable. Entries are matched against a strict
+pattern and passed to xcaddy as list arguments, never to a shell. `config/modules.lock` pins the resolved versions and h1 checksums; builds use only the lock. After editing `modules.txt` run `python3 scripts/lock.py update` (or the maintainers update the lock in a pull request). Any change of the lock or the build inputs triggers a build with the next revision (`2.x.y+xcaddy.N`). The Caddy module IDs a module registers are read from its sources into the lock; the build fails if `caddy list-modules` lacks them.
 
 ## 3. Manual build
 
@@ -59,7 +59,7 @@ python3 scripts/package.py build --version 2.11.9+xcaddy.1 --arch amd64 \
   --binary build/caddy --manifest build/build-manifest.json --out dist
 ```
 
-The package contains `/usr/share/doc/xcaddy/build-manifest.json` (Caddy, plugin, Go and xcaddy versions,
+The package contains `/usr/share/doc/xcaddy/build-manifest.json` (Caddy, module, Go and xcaddy versions,
 binary SHA-256).
 
 ## 4. Repository setup
