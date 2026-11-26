@@ -233,13 +233,22 @@ def test_first_install_starts_the_service_when_systemd_runs(postinst):
     assert "start caddy.service" in log.read_text()
 
 
-def test_www_data_membership_is_added_only_for_a_new_user(postinst, tmp_path):
+def test_www_data_membership_is_ensured_for_existing_and_new_users(postinst, tmp_path):
     run, _, log = postinst
     run()
-    assert not log.exists() or "usermod" not in log.read_text()
+    membership_calls = [
+        line for line in log.read_text().splitlines() if line.startswith("usermod ")
+    ]
+    assert membership_calls == ["usermod -aG www-data caddy"]
     (tmp_path / "no-user").touch()
     run()
-    assert "usermod -aG www-data caddy" in log.read_text()
+    membership_calls = [
+        line for line in log.read_text().splitlines() if line.startswith("usermod ")
+    ]
+    assert membership_calls == [
+        "usermod -aG www-data caddy",
+        "usermod -aG www-data caddy",
+    ]
 
 
 def test_an_existing_data_directory_keeps_its_mode(postinst, tmp_path):

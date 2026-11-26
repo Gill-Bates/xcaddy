@@ -10,8 +10,8 @@ configure)
     fi
     if ! getent passwd caddy >/dev/null; then
         adduser --system --ingroup caddy --home /var/lib/caddy --shell /usr/sbin/nologin caddy
-        if getent group www-data >/dev/null; then usermod -aG www-data caddy; fi
     fi
+    if getent group www-data >/dev/null; then usermod -aG www-data caddy; fi
     # An existing directory (migration from the official package) keeps its mode.
     if [ ! -d /var/lib/caddy ]; then install -d -o caddy -g caddy -m 0755 /var/lib/caddy; fi
     chown caddy:caddy /var/lib/caddy
