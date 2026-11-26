@@ -140,7 +140,7 @@ def install_legacy_caddy(tmp: Path) -> None:
     (stage / "usr/bin/caddy").write_text("#!/bin/sh\nexec sleep 3600\n", encoding="utf-8")
     (stage / "usr/bin/caddy").chmod(0o755)
     (stage / "etc/caddy/Caddyfile").write_text(
-        ':18080 { respond "migration fixture" }\n', encoding="utf-8"
+        ':18080 {\n\trespond "migration fixture"\n}\n', encoding="utf-8"
     )
     (stage / "usr/lib/systemd/system/caddy.service").write_text(
         "[Unit]\nDescription=Caddy\n[Service]\nType=simple\nUser=caddy\nGroup=caddy\n"
@@ -154,7 +154,7 @@ def install_legacy_caddy(tmp: Path) -> None:
     Path("/var/lib/caddy/migration-marker").write_text("keep this data\n", encoding="utf-8")
     # Config management rewrites the conffile; dpkg must not ask or replace it.
     Path("/etc/caddy/Caddyfile").write_text(
-        ':18080 { respond "managed by config management" }\n', encoding="utf-8"
+        ':18080 {\n\trespond "managed by config management"\n}\n', encoding="utf-8"
     )
     if systemd_running():
         expect(
