@@ -135,6 +135,9 @@ Installing `xcaddy` replaces the official `caddy` package. The existing `/etc/ca
 and `/var/lib/caddy` data stay in place, so Caddy can reuse its configuration and TLS certificates.
 Purging `xcaddy` removes those paths and the `caddy` service account.
 
+After the swap the removed `caddy` package can remain in state `rc` (`dpkg -l caddy`). Do not purge it
+afterwards: its maintainer scripts act on the same `caddy.service` state, user and paths that `xcaddy` now owns.
+
 ## 7. Trivy policy
 
 Per architecture, Trivy scans the unpacked package (binary with Go modules, files) and the build configuration

@@ -173,8 +173,11 @@ def postinst(tmp_path):
     shutil.copyfile(repo_root() / "packaging" / UNIT, unit_dir / UNIT)
     bin_dir.mkdir()
     shims = {
-        "getent": "exit 0",
-        "install": 'for last; do :; done; mkdir -p "$last"',
+        "getent": f'[ "$1 $2" = "passwd caddy" ] && [ -e "{tmp_path}/no-user" ] && exit 2; exit 0',
+        "adduser": "exit 0",
+        "addgroup": "exit 0",
+        "install": f'echo "install $@" >> "{log}"; for last; do :; done; mkdir -p "$last"',
+        "chown": "exit 0",
         "systemctl": "exit 0",
         "usermod": f'echo "usermod $@" >> "{log}"',
         "caddy": "exit 0",
@@ -227,9 +230,29 @@ def test_first_install_enables_the_service(postinst, systemd_running):
 def test_first_install_starts_the_service_when_systemd_runs(postinst):
     run, _, log = postinst
     run(systemd_running=True)
-    calls = log.read_text()
-    assert "usermod -aG www-data caddy" in calls
-    assert "start caddy.service" in calls
+    assert "start caddy.service" in log.read_text()
+
+
+def test_www_data_membership_is_added_only_for_a_new_user(postinst, tmp_path):
+    run, _, log = postinst
+    run()
+    assert not log.exists() or "usermod" not in log.read_text()
+    (tmp_path / "no-user").touch()
+    run()
+    assert "usermod -aG www-data caddy" in log.read_text()
+
+
+def test_an_existing_data_directory_keeps_its_mode(postinst, tmp_path):
+    run, _, log = postinst
+    (tmp_path / "lib").mkdir()
+    run()
+    assert not log.exists() or "install" not in log.read_text()
+
+
+def test_a_missing_data_directory_is_created_with_the_official_mode(postinst):
+    run, _, log = postinst
+    run()
+    assert "install -d -o caddy -g caddy -m 0755" in log.read_text()
 
 
 def test_upgrade_keeps_an_enabled_service_enabled(postinst):

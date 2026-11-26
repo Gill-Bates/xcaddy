@@ -10,9 +10,11 @@ configure)
     fi
     if ! getent passwd caddy >/dev/null; then
         adduser --system --ingroup caddy --home /var/lib/caddy --shell /usr/sbin/nologin caddy
+        if getent group www-data >/dev/null; then usermod -aG www-data caddy; fi
     fi
-    usermod -aG www-data caddy
-    install -d -o caddy -g caddy -m 0750 /var/lib/caddy
+    # An existing directory (migration from the official package) keeps its mode.
+    if [ ! -d /var/lib/caddy ]; then install -d -o caddy -g caddy -m 0755 /var/lib/caddy; fi
+    chown caddy:caddy /var/lib/caddy
     # was-enabled is true without a state file, so a first install enables; an upgrade keeps a disabled unit disabled.
     deb-systemd-helper unmask caddy.service >/dev/null || true
     if deb-systemd-helper --quiet was-enabled caddy.service; then

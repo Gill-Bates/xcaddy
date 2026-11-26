@@ -103,20 +103,47 @@ def install_legacy_caddy(tmp: Path) -> None:
         encoding="utf-8",
     )
     (stage / "DEBIAN/conffiles").write_text("/etc/caddy/Caddyfile\n", encoding="utf-8")
-    (stage / "DEBIAN/postinst").write_text(
-        "#!/bin/sh\nset -e\n"
-        "if ! getent passwd caddy >/dev/null; then "
-        "adduser --system --group --home /var/lib/caddy --shell /usr/sbin/nologin caddy; fi\n",
-        encoding="utf-8",
-    )
-    (stage / "DEBIAN/postinst").chmod(0o755)
-    (stage / "usr/bin/caddy").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    scripts = {
+        "postinst": (
+            "set -e\n"
+            "if ! getent passwd caddy >/dev/null; then "
+            "adduser --system --group --home /var/lib/caddy --shell /usr/sbin/nologin caddy; fi\n"
+            'if [ "$1" = configure ]; then\n'
+            "  deb-systemd-helper unmask caddy.service >/dev/null || true\n"
+            "  deb-systemd-helper enable caddy.service >/dev/null || true\n"
+            "  deb-systemd-helper update-state caddy.service >/dev/null || true\n"
+            "  if [ -d /run/systemd/system ]; then\n"
+            "    systemctl daemon-reload || true\n"
+            "    deb-systemd-invoke start caddy.service || true\n"
+            "  fi\n"
+            "fi\n"
+        ),
+        "prerm": (
+            "set -e\n"
+            'if [ -d /run/systemd/system ] && [ "$1" = remove ]; then\n'
+            "  deb-systemd-invoke stop caddy.service || true\n"
+            "fi\n"
+        ),
+        "postrm": (
+            "set -e\n"
+            "if [ -d /run/systemd/system ]; then systemctl daemon-reload || true; fi\n"
+            'if [ "$1" = remove ]; then deb-systemd-helper mask caddy.service >/dev/null; fi\n'
+            'if [ "$1" = purge ]; then\n'
+            "  deb-systemd-helper purge caddy.service >/dev/null || true\n"
+            "  deb-systemd-helper unmask caddy.service >/dev/null || true\n"
+            "fi\n"
+        ),
+    }
+    for name, body in scripts.items():
+        (stage / "DEBIAN" / name).write_text(f"#!/bin/sh\n{body}", encoding="utf-8")
+        (stage / "DEBIAN" / name).chmod(0o755)
+    (stage / "usr/bin/caddy").write_text("#!/bin/sh\nexec sleep 3600\n", encoding="utf-8")
     (stage / "usr/bin/caddy").chmod(0o755)
     (stage / "etc/caddy/Caddyfile").write_text(
         ':18080 { respond "migration fixture" }\n', encoding="utf-8"
     )
     (stage / "usr/lib/systemd/system/caddy.service").write_text(
-        "[Unit]\nDescription=Caddy\n[Service]\nType=notify\nUser=caddy\nGroup=caddy\n"
+        "[Unit]\nDescription=Caddy\n[Service]\nType=simple\nUser=caddy\nGroup=caddy\n"
         "ExecStart=/usr/bin/caddy run --config /etc/caddy/Caddyfile\n"
         "[Install]\nWantedBy=multi-user.target\n",
         encoding="utf-8",
@@ -125,6 +152,23 @@ def install_legacy_caddy(tmp: Path) -> None:
     run(["dpkg-deb", "--root-owner-group", "--build", stage, deb])
     run(["dpkg", "-i", deb])
     Path("/var/lib/caddy/migration-marker").write_text("keep this data\n", encoding="utf-8")
+    # Config management rewrites the conffile; dpkg must not ask or replace it.
+    Path("/etc/caddy/Caddyfile").write_text(
+        ':18080 { respond "managed by config management" }\n', encoding="utf-8"
+    )
+    if systemd_running():
+        expect(
+            run(["systemctl", "is-active", "--quiet", "caddy"], check=False).returncode == 0,
+            "legacy caddy.service is running before the swap",
+        )
+        enabled = run(["systemctl", "is-enabled", "caddy"], check=False).stdout.strip()
+        expect(enabled == "enabled", f"legacy caddy.service is enabled ({enabled!r})")
+
+
+def legacy_caddy_state() -> str:
+    """Two-letter dpkg state of the legacy caddy package; empty when it is not known."""
+    result = run(["dpkg-query", "-W", "-f=${db:Status-Abbrev}", "caddy"], check=False)
+    return result.stdout.strip()[:2] if result.returncode == 0 else ""
 
 
 def apt_flow(old_deb: Path, new_deb: Path, check_binary: bool) -> None:
@@ -186,10 +230,9 @@ def apt_flow(old_deb: Path, new_deb: Path, check_binary: bool) -> None:
                 == "keep this data\n",
                 "legacy Caddy data is unchanged after replacement",
             )
-            expect(
-                run(["dpkg-query", "-W", "-f=${Status}", "caddy"], check=False).returncode != 0,
-                "legacy caddy package is replaced",
-            )
+            state = legacy_caddy_state()
+            log("info", f"legacy caddy package state after the swap: {state or 'not installed'!r}")
+            expect(state in ("", "rc"), "legacy caddy package is removed, not installed")
             expect(publish_deb(new_deb, new_v), "newer version published")
             # stale lists and an empty archive cache: the old index must still resolve to a file
             apt("clean")
