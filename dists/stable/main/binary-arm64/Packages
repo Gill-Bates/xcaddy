@@ -17,3 +17,24 @@ Description: Caddy web server with additional plugins (custom build)
  /usr/bin/caddy-custom with its own service, user and paths, so it can
  coexist with the official caddy package.
 
+Package: xcaddy
+Version: 2.11.9+xcaddy.2
+Architecture: arm64
+Maintainer: xcaddy maintainers <noreply@users.noreply.github.com>
+Installed-Size: 49887
+Depends: adduser, ca-certificates, init-system-helpers
+Provides: caddy
+Conflicts: caddy
+Replaces: caddy
+Homepage: https://github.com/Gill-Bates/xcaddy
+Priority: optional
+Section: httpd
+Filename: pool/main/x/xcaddy/xcaddy_2.11.9+xcaddy.2_arm64.deb
+Size: 11951796
+SHA256: 4e4c3feba45087de1d777e46c892be4011c9ca214dbfea87fbca9d1b89329c98
+SHA1: 52707db6e119b13dff1757560889ea4d03e676ac
+MD5sum: bba0f7a20fbde9efd1a996d71a1e08fd
+Description: Caddy web server with additional modules (custom build)
+ Module-extended Caddy web server built with xcaddy. It replaces the
+ official caddy package while retaining its binary, service and data paths.
+

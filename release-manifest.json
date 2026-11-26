@@ -1,13 +1,14 @@
 {
-  "release_id": "4c00a4a8979f8cff",
+  "release_id": "1d4e77d290595ae0",
   "caddy_version": "2.11.9",
-  "revision": 1,
-  "package_version": "2.11.9+custom.1",
-  "inputs_hash": "996f9018c5b1849e7346abdc2128f208cb7f95e1b245f5e2ff8ef6d3a3ee0765",
+  "revision": 2,
+  "package_version": "2.11.9+xcaddy.2",
+  "inputs_hash": "6aecee6e749df951887af3849f86ef0af28be531af0e8c0e0c597443e06c8523",
   "signing_fingerprint": "80258C5678946FB5D46944E2406B3BB84A2F8EAB",
   "packages": {
-    "caddy-custom_2.11.9+custom.1_amd64.deb": "d1a8428d04cc30b417a842ca570ab7d97d3778ea75dfeb850661557436289912",
-    "caddy-custom_2.11.9+custom.1_arm64.deb": "b3b48ad9a4c2fae1c5812f50a67742fc1d6b71407317339c1b183c51672e2d51"
+    "xcaddy_2.11.9+xcaddy.2_amd64.deb": "67c527c22776fd483b22e6b8f1d37c7c3bd3438d8d6efe673be839083db1673f",
+    "xcaddy_2.11.9+xcaddy.2_arm64.deb": "4e4c3feba45087de1d777e46c892be4011c9ca214dbfea87fbca9d1b89329c98"
   },
-  "source_commit": "2edb7edf0e5849e42cd5b85e441b0a65737b94b5"
+  "source_commit": "93ccaa45103720433e4888010e84b0c05441540c",
+  "source_run_id": "45824085084"
 }
