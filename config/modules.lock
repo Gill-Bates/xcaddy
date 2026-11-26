@@ -28,6 +28,19 @@
       "module_ids_any": [
         "http.handlers.rate_limit"
       ]
+    },
+    {
+      "module": "github.com/ueffel/caddy-brotli",
+      "requested": "github.com/ueffel/caddy-brotli",
+      "version": "v1.7.0",
+      "sum": "h1:xwXaBvTzVZc8Ae6DAB2WiGgJ6I+UG+RnttXdicYpBZI=",
+      "go_mod_sum": "h1:PBdQ4oe1jaYCfGWjdWGZ8LPFZYcZ58sBuuiatqW/6uI=",
+      "module_ids": [
+        "http.encoders.br"
+      ],
+      "module_ids_any": [
+        "http.encoders.br"
+      ]
     }
   ]
 }
